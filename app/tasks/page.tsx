@@ -1,7 +1,12 @@
- "use client";
+"use client";
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+
+type Employee = {
+  id: string;
+  name: string;
+};
 
 type Task = {
   id: string;
@@ -19,6 +24,7 @@ type Task = {
 
 export default function TasksPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -35,22 +41,36 @@ export default function TasksPage() {
     notes: "",
   });
 
-  async function loadTasks() {
-    const { data, error } = await supabase
-      .from("office_tasks")
-      .select("*")
-      .order("created_at", { ascending: false });
+  async function loadData() {
+    const [tasksResult, employeesResult] = await Promise.all([
+      supabase
+        .from("office_tasks")
+        .select("*")
+        .order("created_at", { ascending: false }),
 
-    if (error) {
-      alert(error.message);
+      supabase
+        .from("employees")
+        .select("id, name")
+        .eq("active", true)
+        .order("name"),
+    ]);
+
+    if (tasksResult.error) {
+      alert(tasksResult.error.message);
       return;
     }
 
-    setTasks(data || []);
+    if (employeesResult.error) {
+      alert(employeesResult.error.message);
+      return;
+    }
+
+    setTasks(tasksResult.data || []);
+    setEmployees(employeesResult.data || []);
   }
 
   useEffect(() => {
-    loadTasks();
+    loadData();
   }, []);
 
   async function addTask(e: React.FormEvent) {
@@ -99,7 +119,7 @@ export default function TasksPage() {
     });
 
     setShowForm(false);
-    loadTasks();
+    loadData();
   }
 
   return (
@@ -131,7 +151,7 @@ export default function TasksPage() {
 
       {showForm && (
         <form onSubmit={addTask} style={formStyle}>
-          <h2>Add New Task</h2>
+          <h2 style={{ marginBottom: "20px" }}>Add New Task</h2>
 
           <input
             placeholder="Task Name *"
@@ -151,14 +171,22 @@ export default function TasksPage() {
             style={inputStyle}
           />
 
-          <input
-            placeholder="Assigned To"
+          {/* EMPLOYEE DROPDOWN */}
+          <select
             value={form.assigned_to}
             onChange={(e) =>
               setForm({ ...form, assigned_to: e.target.value })
             }
             style={inputStyle}
-          />
+          >
+            <option value="">Select Employee</option>
+
+            {employees.map((employee) => (
+              <option key={employee.id} value={employee.name}>
+                {employee.name}
+              </option>
+            ))}
+          </select>
 
           <select
             value={form.priority}
@@ -239,7 +267,11 @@ export default function TasksPage() {
             style={inputStyle}
           />
 
-          <button type="submit" disabled={loading} style={buttonStyle}>
+          <button
+            type="submit"
+            disabled={loading}
+            style={buttonStyle}
+          >
             {loading ? "Saving..." : "Save Task"}
           </button>
         </form>
@@ -275,7 +307,8 @@ export default function TasksPage() {
                   <td style={tdStyle}>{task.priority}</td>
                   <td style={tdStyle}>{task.status}</td>
                   <td style={tdStyle}>
-                    {task.completed_quantity} / {task.total_quantity}
+                    {task.completed_quantity} /{" "}
+                    {task.total_quantity}
                   </td>
                   <td style={tdStyle}>
                     {task.deadline || "-"}
