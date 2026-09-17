@@ -28,6 +28,7 @@ export default function TasksPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [showForm, setShowForm] = useState(false);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [loading, setLoading] = useState(false);
 
   const [form, setForm] = useState({
@@ -43,7 +44,6 @@ export default function TasksPage() {
     notes: "",
   });
 
-  // Load Tasks + Employees
   async function loadData() {
     const { data: taskData, error: taskError } = await supabase
       .from("office_tasks")
@@ -51,7 +51,7 @@ export default function TasksPage() {
       .order("created_at", { ascending: false });
 
     if (taskError) {
-      alert("Task Load Error: " + taskError.message);
+      alert(taskError.message);
       return;
     }
 
@@ -63,7 +63,7 @@ export default function TasksPage() {
         .order("name", { ascending: true });
 
     if (employeeError) {
-      alert("Employee Load Error: " + employeeError.message);
+      alert(employeeError.message);
       return;
     }
 
@@ -75,43 +75,8 @@ export default function TasksPage() {
     loadData();
   }, []);
 
-  // Add Task
-  async function addTask(e: React.FormEvent) {
-    e.preventDefault();
-
-    if (!form.task_name.trim()) {
-      alert("Task Name দিন");
-      return;
-    }
-
-    setLoading(true);
-
-    const { error } = await supabase
-      .from("office_tasks")
-      .insert([
-        {
-          task_name: form.task_name.trim(),
-          description: form.description.trim(),
-          assigned_to: form.assigned_to,
-          priority: form.priority,
-          status: form.status.trim() || "Pending",
-          start_date: form.start_date || null,
-          deadline: form.deadline || null,
-          total_quantity: Number(form.total_quantity) || 0,
-          completed_quantity:
-            Number(form.completed_quantity) || 0,
-          notes: form.notes.trim(),
-        },
-      ]);
-
-    setLoading(false);
-
-    if (error) {
-      alert("Task Save Error: " + error.message);
-      return;
-    }
-
-    alert("Task successfully added! ✅");
+  function openAddForm() {
+    setEditingTask(null);
 
     setForm({
       task_name: "",
@@ -126,37 +91,159 @@ export default function TasksPage() {
       notes: "",
     });
 
+    setShowForm(true);
+  }
+
+  function openEditForm(task: Task) {
+    setEditingTask(task);
+
+    setForm({
+      task_name: task.task_name || "",
+      description: task.description || "",
+      assigned_to: task.assigned_to || "",
+      priority: task.priority || "medium",
+      status: task.status || "Pending",
+      start_date: task.start_date || "",
+      deadline: task.deadline || "",
+      total_quantity: String(task.total_quantity ?? 0),
+      completed_quantity: String(task.completed_quantity ?? 0),
+      notes: task.notes || "",
+    });
+
+    setShowForm(true);
+  }
+
+  async function saveTask(e: React.FormEvent) {
+    e.preventDefault();
+
+    if (!form.task_name.trim()) {
+      alert("Task Name দিন");
+      return;
+    }
+
+    setLoading(true);
+
+    const taskData = {
+      task_name: form.task_name.trim(),
+      description: form.description.trim(),
+      assigned_to: form.assigned_to,
+      priority: form.priority,
+      status: form.status.trim() || "Pending",
+      start_date: form.start_date || null,
+      deadline: form.deadline || null,
+      total_quantity: Number(form.total_quantity) || 0,
+      completed_quantity:
+        Number(form.completed_quantity) || 0,
+      notes: form.notes.trim(),
+    };
+
+    let error;
+
+    if (editingTask) {
+      const result = await supabase
+        .from("office_tasks")
+        .update(taskData)
+        .eq("id", editingTask.id);
+
+      error = result.error;
+    } else {
+      const result = await supabase
+        .from("office_tasks")
+        .insert([taskData]);
+
+      error = result.error;
+    }
+
+    setLoading(false);
+
+    if (error) {
+      alert("Error: " + error.message);
+      return;
+    }
+
+    alert(
+      editingTask
+        ? "Task Updated Successfully! ✅"
+        : "Task Added Successfully! ✅"
+    );
+
     setShowForm(false);
+    setEditingTask(null);
+    loadData();
+  }
+
+  async function deleteTask(id: string) {
+    const confirmDelete = confirm(
+      "এই Task টি Delete করতে চান?"
+    );
+
+    if (!confirmDelete) return;
+
+    const { error } = await supabase
+      .from("office_tasks")
+      .delete()
+      .eq("id", id);
+
+    if (error) {
+      alert("Delete Error: " + error.message);
+      return;
+    }
+
     loadData();
   }
 
   return (
     <main style={pageStyle}>
-      {/* Header */}
+      {/* HEADER */}
       <div style={headerStyle}>
         <div>
           <h1 style={titleStyle}>Office Tasks</h1>
+
           <p style={subtitleStyle}>
             Manage all office work
           </p>
         </div>
 
         <button
-          onClick={() => setShowForm(!showForm)}
+          onClick={openAddForm}
           style={buttonStyle}
         >
-          {showForm ? "✕ Close" : "+ Add Task"}
+          + Add Task
         </button>
       </div>
 
-      {/* Add Task Form */}
+      {/* FORM */}
       {showForm && (
-        <form onSubmit={addTask} style={formStyle}>
-          <h2 style={formTitleStyle}>
-            Add New Office Task
-          </h2>
+        <form
+          onSubmit={saveTask}
+          style={formStyle}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: "20px",
+            }}
+          >
+            <h2 style={{ margin: 0 }}>
+              {editingTask
+                ? "Edit Task"
+                : "Add New Office Task"}
+            </h2>
 
-          {/* Task Name */}
+            <button
+              type="button"
+              onClick={() => {
+                setShowForm(false);
+                setEditingTask(null);
+              }}
+              style={closeButtonStyle}
+            >
+              ✕
+            </button>
+          </div>
+
           <label style={labelStyle}>
             Task Name *
           </label>
@@ -174,13 +261,12 @@ export default function TasksPage() {
             style={inputStyle}
           />
 
-          {/* Description */}
           <label style={labelStyle}>
             Description
           </label>
 
           <textarea
-            placeholder="কাজের বিস্তারিত লিখুন"
+            placeholder="কাজের বিস্তারিত"
             value={form.description}
             onChange={(e) =>
               setForm({
@@ -191,7 +277,6 @@ export default function TasksPage() {
             style={textareaStyle}
           />
 
-          {/* Assigned Employee */}
           <label style={labelStyle}>
             Assigned To
           </label>
@@ -220,20 +305,6 @@ export default function TasksPage() {
             ))}
           </select>
 
-          {employees.length === 0 && (
-            <p
-              style={{
-                color: "#d97706",
-                fontSize: "13px",
-                marginTop: "-5px",
-                marginBottom: "12px",
-              }}
-            >
-              কোনো active employee পাওয়া যায়নি।
-            </p>
-          )}
-
-          {/* Priority */}
           <label style={labelStyle}>
             Priority
           </label>
@@ -254,7 +325,6 @@ export default function TasksPage() {
             <option value="urgent">Urgent</option>
           </select>
 
-          {/* Status */}
           <label style={labelStyle}>
             Current Status
           </label>
@@ -272,7 +342,6 @@ export default function TasksPage() {
             style={inputStyle}
           />
 
-          {/* Dates */}
           <div style={twoColumnStyle}>
             <div>
               <label style={labelStyle}>
@@ -311,7 +380,6 @@ export default function TasksPage() {
             </div>
           </div>
 
-          {/* Quantity */}
           <div style={twoColumnStyle}>
             <div>
               <label style={labelStyle}>
@@ -321,7 +389,6 @@ export default function TasksPage() {
               <input
                 type="number"
                 min="0"
-                placeholder="1000"
                 value={form.total_quantity}
                 onChange={(e) =>
                   setForm({
@@ -341,7 +408,6 @@ export default function TasksPage() {
               <input
                 type="number"
                 min="0"
-                placeholder="0"
                 value={form.completed_quantity}
                 onChange={(e) =>
                   setForm({
@@ -354,13 +420,12 @@ export default function TasksPage() {
             </div>
           </div>
 
-          {/* Notes */}
           <label style={labelStyle}>
             Notes
           </label>
 
           <textarea
-            placeholder="অতিরিক্ত কোনো তথ্য"
+            placeholder="অতিরিক্ত তথ্য"
             value={form.notes}
             onChange={(e) =>
               setForm({
@@ -371,21 +436,21 @@ export default function TasksPage() {
             style={textareaStyle}
           />
 
-          {/* Save */}
           <button
             type="submit"
             disabled={loading}
-            style={{
-              ...saveButtonStyle,
-              opacity: loading ? 0.6 : 1,
-            }}
+            style={saveButtonStyle}
           >
-            {loading ? "Saving..." : "✓ Save Task"}
+            {loading
+              ? "Saving..."
+              : editingTask
+              ? "✓ Update Task"
+              : "✓ Save Task"}
           </button>
         </form>
       )}
 
-      {/* Task Table */}
+      {/* TASK TABLE */}
       <div style={tableWrapperStyle}>
         <table style={tableStyle}>
           <thead>
@@ -396,6 +461,7 @@ export default function TasksPage() {
               <th style={thStyle}>Status</th>
               <th style={thStyle}>Quantity</th>
               <th style={thStyle}>Deadline</th>
+              <th style={thStyle}>Action</th>
             </tr>
           </thead>
 
@@ -403,7 +469,7 @@ export default function TasksPage() {
             {tasks.length === 0 ? (
               <tr>
                 <td
-                  colSpan={6}
+                  colSpan={7}
                   style={emptyStyle}
                 >
                   No office tasks yet
@@ -413,7 +479,9 @@ export default function TasksPage() {
               tasks.map((task) => (
                 <tr key={task.id}>
                   <td style={tdStyle}>
-                    <strong>{task.task_name}</strong>
+                    <strong>
+                      {task.task_name}
+                    </strong>
 
                     {task.description && (
                       <div
@@ -448,6 +516,26 @@ export default function TasksPage() {
                   <td style={tdStyle}>
                     {task.deadline || "-"}
                   </td>
+
+                  <td style={tdStyle}>
+                    <button
+                      onClick={() =>
+                        openEditForm(task)
+                      }
+                      style={editButtonStyle}
+                    >
+                      ✏️ Edit
+                    </button>
+
+                    <button
+                      onClick={() =>
+                        deleteTask(task.id)
+                      }
+                      style={deleteButtonStyle}
+                    >
+                      🗑 Delete
+                    </button>
+                  </td>
                 </tr>
               ))
             )}
@@ -458,7 +546,7 @@ export default function TasksPage() {
   );
 }
 
-/* ---------- STYLES ---------- */
+/* STYLES */
 
 const pageStyle = {
   padding: "30px",
@@ -492,7 +580,14 @@ const buttonStyle = {
   border: "none",
   borderRadius: "8px",
   cursor: "pointer",
-  fontSize: "15px",
+};
+
+const closeButtonStyle = {
+  background: "#eee",
+  border: "none",
+  borderRadius: "6px",
+  padding: "7px 10px",
+  cursor: "pointer",
 };
 
 const formStyle = {
@@ -502,12 +597,6 @@ const formStyle = {
   marginBottom: "25px",
   border: "1px solid #ddd",
   maxWidth: "800px",
-};
-
-const formTitleStyle = {
-  fontSize: "22px",
-  marginTop: 0,
-  marginBottom: "20px",
 };
 
 const labelStyle = {
@@ -524,7 +613,6 @@ const inputStyle = {
   border: "1px solid #ccc",
   borderRadius: "7px",
   boxSizing: "border-box" as const,
-  fontSize: "14px",
 };
 
 const textareaStyle = {
@@ -546,7 +634,6 @@ const saveButtonStyle = {
   border: "none",
   borderRadius: "8px",
   cursor: "pointer",
-  fontSize: "15px",
   fontWeight: "600",
 };
 
@@ -560,7 +647,7 @@ const tableWrapperStyle = {
 const tableStyle = {
   width: "100%",
   borderCollapse: "collapse" as const,
-  minWidth: "850px",
+  minWidth: "1000px",
 };
 
 const thStyle = {
@@ -568,17 +655,32 @@ const thStyle = {
   textAlign: "left" as const,
   borderBottom: "1px solid #ddd",
   background: "#f7f7f7",
-  fontSize: "14px",
 };
 
 const tdStyle = {
   padding: "14px",
   borderBottom: "1px solid #eee",
-  fontSize: "14px",
 };
 
 const emptyStyle = {
   padding: "40px",
   textAlign: "center" as const,
   color: "#777",
+};
+
+const editButtonStyle = {
+  background: "#eee",
+  border: "none",
+  padding: "7px 10px",
+  borderRadius: "6px",
+  cursor: "pointer",
+  marginRight: "6px",
+};
+
+const deleteButtonStyle = {
+  background: "#fee2e2",
+  border: "none",
+  padding: "7px 10px",
+  borderRadius: "6px",
+  cursor: "pointer",
 };
