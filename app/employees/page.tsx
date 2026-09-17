@@ -5,11 +5,11 @@ import { createClient } from "../../lib/supabase/client";
 
 type Employee = {
   id: string;
-  full_name: string | null;
+  name: string;
   phone: string | null;
   department: string | null;
-  role: string | null;
-  active: boolean | null;
+  designation: string | null;
+  active: boolean;
 };
 
 export default function EmployeesPage() {
@@ -17,20 +17,21 @@ export default function EmployeesPage() {
 
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
 
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [department, setDepartment] = useState("");
+  const [designation, setDesignation] = useState("");
 
   async function loadEmployees() {
     setLoading(true);
 
     const { data, error } = await supabase
-      .from("profiles")
-      .select("id,full_name,phone,department,role,active")
+      .from("employees")
+      .select("*")
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -57,33 +58,23 @@ export default function EmployeesPage() {
     setSaving(true);
     setMessage("");
 
-    const { data: userData } = await supabase.auth.getUser();
-
-    if (!userData.user) {
-      setMessage("আপনি Login করা নেই");
-      setSaving(false);
-      return;
-    }
-
-    const { error } = await supabase
-      .from("profiles")
-      .update({
-        full_name: name,
-        phone,
-        department,
-      })
-      .eq("id", userData.user.id);
+    const { error } = await supabase.from("employees").insert({
+      name: name.trim(),
+      phone: phone.trim(),
+      department: department.trim(),
+      designation: designation.trim(),
+      active: true,
+    });
 
     if (error) {
       setMessage(error.message);
     } else {
-      setMessage(
-        "এই মুহূর্তে আপনার নিজের profile-এ Employee তথ্য update হয়েছে।"
-      );
+      setMessage("Employee successfully added ✅");
 
       setName("");
       setPhone("");
       setDepartment("");
+      setDesignation("");
       setShowForm(false);
 
       await loadEmployees();
@@ -97,7 +88,7 @@ export default function EmployeesPage() {
       <div className="pagehead">
         <div>
           <h1>Employees</h1>
-          <p className="muted">Employee information management</p>
+          <p className="muted">Employee information</p>
         </div>
 
         <button
@@ -149,6 +140,16 @@ export default function EmployeesPage() {
               />
             </div>
 
+            <div>
+              <label className="label">Designation</label>
+              <input
+                className="input"
+                value={designation}
+                onChange={(e) => setDesignation(e.target.value)}
+                placeholder="Manager / Worker / Staff"
+              />
+            </div>
+
             <button className="btn" disabled={saving}>
               {saving ? "Saving..." : "Save Employee"}
             </button>
@@ -162,7 +163,7 @@ export default function EmployeesPage() {
         {loading ? (
           <p>Loading...</p>
         ) : employees.length === 0 ? (
-          <p className="muted">No employees found.</p>
+          <p className="muted">No employees added yet.</p>
         ) : (
           <div className="tablewrap">
             <table>
@@ -171,7 +172,7 @@ export default function EmployeesPage() {
                   <th>Name</th>
                   <th>Phone</th>
                   <th>Department</th>
-                  <th>Role</th>
+                  <th>Designation</th>
                   <th>Status</th>
                 </tr>
               </thead>
@@ -179,13 +180,11 @@ export default function EmployeesPage() {
               <tbody>
                 {employees.map((employee) => (
                   <tr key={employee.id}>
-                    <td>{employee.full_name || "-"}</td>
+                    <td>{employee.name}</td>
                     <td>{employee.phone || "-"}</td>
                     <td>{employee.department || "-"}</td>
-                    <td>{employee.role || "-"}</td>
-                    <td>
-                      {employee.active === false ? "Inactive" : "Active"}
-                    </td>
+                    <td>{employee.designation || "-"}</td>
+                    <td>{employee.active ? "Active" : "Inactive"}</td>
                   </tr>
                 ))}
               </tbody>
