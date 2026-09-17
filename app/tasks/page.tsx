@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/lib/supabase/client";
 
 type Employee = {
   id: string;
@@ -41,69 +41,75 @@ export default function TasksPage() {
     notes: "",
   });
 
+  // Load Tasks + Employees
   async function loadData() {
-    const [tasksResult, employeesResult] = await Promise.all([
-      supabase
-        .from("office_tasks")
-        .select("*")
-        .order("created_at", { ascending: false }),
+    const { data: taskData, error: taskError } = await supabase
+      .from("office_tasks")
+      .select("*")
+      .order("created_at", { ascending: false });
 
-      supabase
+    if (taskError) {
+      alert("Task Load Error: " + taskError.message);
+      return;
+    }
+
+    const { data: employeeData, error: employeeError } =
+      await supabase
         .from("employees")
         .select("id, name")
         .eq("active", true)
-        .order("name"),
-    ]);
+        .order("name", { ascending: true });
 
-    if (tasksResult.error) {
-      alert(tasksResult.error.message);
+    if (employeeError) {
+      alert("Employee Load Error: " + employeeError.message);
       return;
     }
 
-    if (employeesResult.error) {
-      alert(employeesResult.error.message);
-      return;
-    }
-
-    setTasks(tasksResult.data || []);
-    setEmployees(employeesResult.data || []);
+    setTasks(taskData || []);
+    setEmployees(employeeData || []);
   }
 
   useEffect(() => {
     loadData();
   }, []);
 
+  // Add Task
   async function addTask(e: React.FormEvent) {
     e.preventDefault();
 
     if (!form.task_name.trim()) {
-      alert("Task name দিন");
+      alert("Task Name দিন");
       return;
     }
 
     setLoading(true);
 
-    const { error } = await supabase.from("office_tasks").insert([
-      {
-        task_name: form.task_name,
-        description: form.description,
-        assigned_to: form.assigned_to,
-        priority: form.priority,
-        status: form.status,
-        start_date: form.start_date || null,
-        deadline: form.deadline || null,
-        total_quantity: Number(form.total_quantity) || 0,
-        completed_quantity: Number(form.completed_quantity) || 0,
-        notes: form.notes,
-      },
-    ]);
+    const { error } = await supabase
+      .from("office_tasks")
+      .insert([
+        {
+          task_name: form.task_name.trim(),
+          description: form.description.trim(),
+          assigned_to: form.assigned_to,
+          priority: form.priority,
+          status: form.status.trim() || "Pending",
+          start_date: form.start_date || null,
+          deadline: form.deadline || null,
+          total_quantity: Number(form.total_quantity) || 0,
+          completed_quantity:
+            Number(form.completed_quantity) || 0,
+          notes: form.notes.trim(),
+        },
+      ]);
 
     setLoading(false);
 
     if (error) {
-      alert(error.message);
+      alert("Task Save Error: " + error.message);
       return;
     }
+
+    alert("Task successfully added! ✅");
 
     setForm({
       task_name: "",
@@ -123,20 +129,12 @@ export default function TasksPage() {
   }
 
   return (
-    <main style={{ padding: "30px" }}>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: "25px",
-        }}
-      >
+    <main style={pageStyle}>
+      {/* Header */}
+      <div style={headerStyle}>
         <div>
-          <h1 style={{ fontSize: "30px", fontWeight: "700" }}>
-            Office Tasks
-          </h1>
-          <p style={{ color: "#666" }}>
+          <h1 style={titleStyle}>Office Tasks</h1>
+          <p style={subtitleStyle}>
             Manage all office work
           </p>
         </div>
@@ -145,53 +143,106 @@ export default function TasksPage() {
           onClick={() => setShowForm(!showForm)}
           style={buttonStyle}
         >
-          + Add Task
+          {showForm ? "✕ Close" : "+ Add Task"}
         </button>
       </div>
 
+      {/* Add Task Form */}
       {showForm && (
         <form onSubmit={addTask} style={formStyle}>
-          <h2 style={{ marginBottom: "20px" }}>Add New Task</h2>
+          <h2 style={formTitleStyle}>
+            Add New Office Task
+          </h2>
+
+          {/* Task Name */}
+          <label style={labelStyle}>
+            Task Name *
+          </label>
 
           <input
-            placeholder="Task Name *"
+            type="text"
+            placeholder="যেমন: Cutting Order #101"
             value={form.task_name}
             onChange={(e) =>
-              setForm({ ...form, task_name: e.target.value })
+              setForm({
+                ...form,
+                task_name: e.target.value,
+              })
             }
             style={inputStyle}
           />
+
+          {/* Description */}
+          <label style={labelStyle}>
+            Description
+          </label>
 
           <textarea
-            placeholder="Description"
+            placeholder="কাজের বিস্তারিত লিখুন"
             value={form.description}
             onChange={(e) =>
-              setForm({ ...form, description: e.target.value })
+              setForm({
+                ...form,
+                description: e.target.value,
+              })
             }
-            style={inputStyle}
+            style={textareaStyle}
           />
 
-          {/* EMPLOYEE DROPDOWN */}
+          {/* Assigned Employee */}
+          <label style={labelStyle}>
+            Assigned To
+          </label>
+
           <select
             value={form.assigned_to}
             onChange={(e) =>
-              setForm({ ...form, assigned_to: e.target.value })
+              setForm({
+                ...form,
+                assigned_to: e.target.value,
+              })
             }
             style={inputStyle}
           >
-            <option value="">Select Employee</option>
+            <option value="">
+              -- Employee Select করুন --
+            </option>
 
             {employees.map((employee) => (
-              <option key={employee.id} value={employee.name}>
+              <option
+                key={employee.id}
+                value={employee.name}
+              >
                 {employee.name}
               </option>
             ))}
           </select>
 
+          {employees.length === 0 && (
+            <p
+              style={{
+                color: "#d97706",
+                fontSize: "13px",
+                marginTop: "-5px",
+                marginBottom: "12px",
+              }}
+            >
+              কোনো active employee পাওয়া যায়নি।
+            </p>
+          )}
+
+          {/* Priority */}
+          <label style={labelStyle}>
+            Priority
+          </label>
+
           <select
             value={form.priority}
             onChange={(e) =>
-              setForm({ ...form, priority: e.target.value })
+              setForm({
+                ...form,
+                priority: e.target.value,
+              })
             }
             style={inputStyle}
           >
@@ -201,84 +252,140 @@ export default function TasksPage() {
             <option value="urgent">Urgent</option>
           </select>
 
+          {/* Status */}
+          <label style={labelStyle}>
+            Current Status
+          </label>
+
           <input
-            placeholder="Status"
+            type="text"
+            placeholder="যেমন: Cutting চলছে"
             value={form.status}
             onChange={(e) =>
-              setForm({ ...form, status: e.target.value })
+              setForm({
+                ...form,
+                status: e.target.value,
+              })
             }
             style={inputStyle}
           />
 
-          <div style={{ display: "flex", gap: "10px" }}>
-            <input
-              type="date"
-              value={form.start_date}
-              onChange={(e) =>
-                setForm({ ...form, start_date: e.target.value })
-              }
-              style={inputStyle}
-            />
+          {/* Dates */}
+          <div style={twoColumnStyle}>
+            <div>
+              <label style={labelStyle}>
+                Start Date
+              </label>
 
-            <input
-              type="date"
-              value={form.deadline}
-              onChange={(e) =>
-                setForm({ ...form, deadline: e.target.value })
-              }
-              style={inputStyle}
-            />
+              <input
+                type="date"
+                value={form.start_date}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    start_date: e.target.value,
+                  })
+                }
+                style={inputStyle}
+              />
+            </div>
+
+            <div>
+              <label style={labelStyle}>
+                Deadline
+              </label>
+
+              <input
+                type="date"
+                value={form.deadline}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    deadline: e.target.value,
+                  })
+                }
+                style={inputStyle}
+              />
+            </div>
           </div>
 
-          <div style={{ display: "flex", gap: "10px" }}>
-            <input
-              type="number"
-              placeholder="Total Quantity"
-              value={form.total_quantity}
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  total_quantity: e.target.value,
-                })
-              }
-              style={inputStyle}
-            />
+          {/* Quantity */}
+          <div style={twoColumnStyle}>
+            <div>
+              <label style={labelStyle}>
+                Total Quantity
+              </label>
 
-            <input
-              type="number"
-              placeholder="Completed Quantity"
-              value={form.completed_quantity}
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  completed_quantity: e.target.value,
-                })
-              }
-              style={inputStyle}
-            />
+              <input
+                type="number"
+                min="0"
+                placeholder="1000"
+                value={form.total_quantity}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    total_quantity: e.target.value,
+                  })
+                }
+                style={inputStyle}
+              />
+            </div>
+
+            <div>
+              <label style={labelStyle}>
+                Completed Quantity
+              </label>
+
+              <input
+                type="number"
+                min="0"
+                placeholder="0"
+                value={form.completed_quantity}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    completed_quantity: e.target.value,
+                  })
+                }
+                style={inputStyle}
+              />
+            </div>
           </div>
+
+          {/* Notes */}
+          <label style={labelStyle}>
+            Notes
+          </label>
 
           <textarea
-            placeholder="Notes"
+            placeholder="অতিরিক্ত কোনো তথ্য"
             value={form.notes}
             onChange={(e) =>
-              setForm({ ...form, notes: e.target.value })
+              setForm({
+                ...form,
+                notes: e.target.value,
+              })
             }
-            style={inputStyle}
+            style={textareaStyle}
           />
 
+          {/* Save */}
           <button
             type="submit"
             disabled={loading}
-            style={buttonStyle}
+            style={{
+              ...saveButtonStyle,
+              opacity: loading ? 0.6 : 1,
+            }}
           >
-            {loading ? "Saving..." : "Save Task"}
+            {loading ? "Saving..." : "✓ Save Task"}
           </button>
         </form>
       )}
 
-      <div style={tableWrapper}>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+      {/* Task Table */}
+      <div style={tableWrapperStyle}>
+        <table style={tableStyle}>
           <thead>
             <tr>
               <th style={thStyle}>Task</th>
@@ -293,23 +400,49 @@ export default function TasksPage() {
           <tbody>
             {tasks.length === 0 ? (
               <tr>
-                <td colSpan={6} style={emptyStyle}>
-                  No tasks yet
+                <td
+                  colSpan={6}
+                  style={emptyStyle}
+                >
+                  No office tasks yet
                 </td>
               </tr>
             ) : (
               tasks.map((task) => (
                 <tr key={task.id}>
-                  <td style={tdStyle}>{task.task_name}</td>
+                  <td style={tdStyle}>
+                    <strong>{task.task_name}</strong>
+
+                    {task.description && (
+                      <div
+                        style={{
+                          color: "#777",
+                          fontSize: "13px",
+                          marginTop: "4px",
+                        }}
+                      >
+                        {task.description}
+                      </div>
+                    )}
+                  </td>
+
                   <td style={tdStyle}>
                     {task.assigned_to || "-"}
                   </td>
-                  <td style={tdStyle}>{task.priority}</td>
-                  <td style={tdStyle}>{task.status}</td>
+
+                  <td style={tdStyle}>
+                    {task.priority}
+                  </td>
+
+                  <td style={tdStyle}>
+                    {task.status}
+                  </td>
+
                   <td style={tdStyle}>
                     {task.completed_quantity} /{" "}
                     {task.total_quantity}
                   </td>
+
                   <td style={tdStyle}>
                     {task.deadline || "-"}
                   </td>
@@ -323,6 +456,33 @@ export default function TasksPage() {
   );
 }
 
+/* ---------- STYLES ---------- */
+
+const pageStyle = {
+  padding: "30px",
+  maxWidth: "1400px",
+  margin: "0 auto",
+};
+
+const headerStyle = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  marginBottom: "25px",
+  gap: "15px",
+};
+
+const titleStyle = {
+  fontSize: "30px",
+  fontWeight: "700",
+  margin: 0,
+};
+
+const subtitleStyle = {
+  color: "#666",
+  marginTop: "5px",
+};
+
 const buttonStyle = {
   background: "#111",
   color: "#fff",
@@ -330,6 +490,7 @@ const buttonStyle = {
   border: "none",
   borderRadius: "8px",
   cursor: "pointer",
+  fontSize: "15px",
 };
 
 const formStyle = {
@@ -338,23 +499,66 @@ const formStyle = {
   borderRadius: "12px",
   marginBottom: "25px",
   border: "1px solid #ddd",
-  maxWidth: "750px",
+  maxWidth: "800px",
+};
+
+const formTitleStyle = {
+  fontSize: "22px",
+  marginTop: 0,
+  marginBottom: "20px",
+};
+
+const labelStyle = {
+  display: "block",
+  fontSize: "14px",
+  fontWeight: "600",
+  marginBottom: "6px",
 };
 
 const inputStyle = {
   width: "100%",
   padding: "12px",
-  marginBottom: "12px",
+  marginBottom: "15px",
   border: "1px solid #ccc",
   borderRadius: "7px",
   boxSizing: "border-box" as const,
+  fontSize: "14px",
 };
 
-const tableWrapper = {
+const textareaStyle = {
+  ...inputStyle,
+  minHeight: "90px",
+  resize: "vertical" as const,
+};
+
+const twoColumnStyle = {
+  display: "grid",
+  gridTemplateColumns: "1fr 1fr",
+  gap: "15px",
+};
+
+const saveButtonStyle = {
+  background: "#111",
+  color: "#fff",
+  padding: "13px 25px",
+  border: "none",
+  borderRadius: "8px",
+  cursor: "pointer",
+  fontSize: "15px",
+  fontWeight: "600",
+};
+
+const tableWrapperStyle = {
   background: "#fff",
   borderRadius: "12px",
   overflow: "auto" as const,
   border: "1px solid #ddd",
+};
+
+const tableStyle = {
+  width: "100%",
+  borderCollapse: "collapse" as const,
+  minWidth: "850px",
 };
 
 const thStyle = {
@@ -362,14 +566,17 @@ const thStyle = {
   textAlign: "left" as const,
   borderBottom: "1px solid #ddd",
   background: "#f7f7f7",
+  fontSize: "14px",
 };
 
 const tdStyle = {
   padding: "14px",
   borderBottom: "1px solid #eee",
+  fontSize: "14px",
 };
 
 const emptyStyle = {
-  padding: "30px",
+  padding: "40px",
   textAlign: "center" as const,
+  color: "#777",
 };
