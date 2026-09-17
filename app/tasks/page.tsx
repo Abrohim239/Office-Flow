@@ -45,39 +45,36 @@ export default function TasksPage() {
   });
 
   async function loadData() {
-    const { data: taskData, error: taskError } = await supabase
+    const { data, error } = await supabase
       .from("office_tasks")
       .select("*")
       .order("created_at", { ascending: false });
 
-    if (taskError) {
-      alert(taskError.message);
+    if (error) {
+      alert(error.message);
       return;
     }
 
-    const { data: employeeData, error: employeeError } =
-      await supabase
-        .from("employees")
-        .select("id, name")
-        .eq("active", true)
-        .order("name", { ascending: true });
+    const { data: emp, error: empError } = await supabase
+      .from("employees")
+      .select("id,name")
+      .eq("active", true)
+      .order("name");
 
-    if (employeeError) {
-      alert(employeeError.message);
+    if (empError) {
+      alert(empError.message);
       return;
     }
 
-    setTasks(taskData || []);
-    setEmployees(employeeData || []);
+    setTasks(data || []);
+    setEmployees(emp || []);
   }
 
   useEffect(() => {
     loadData();
   }, []);
 
-  function openAddForm() {
-    setEditingTask(null);
-
+  function resetForm() {
     setForm({
       task_name: "",
       description: "",
@@ -90,7 +87,11 @@ export default function TasksPage() {
       completed_quantity: "0",
       notes: "",
     });
+  }
 
+  function openAddForm() {
+    setEditingTask(null);
+    resetForm();
     setShowForm(true);
   }
 
@@ -132,8 +133,7 @@ export default function TasksPage() {
       start_date: form.start_date || null,
       deadline: form.deadline || null,
       total_quantity: Number(form.total_quantity) || 0,
-      completed_quantity:
-        Number(form.completed_quantity) || 0,
+      completed_quantity: Number(form.completed_quantity) || 0,
       notes: form.notes.trim(),
     };
 
@@ -146,6 +146,16 @@ export default function TasksPage() {
         .eq("id", editingTask.id);
 
       error = result.error;
+
+      if (!error) {
+        await supabase.from("task_updates").insert({
+          task_id: editingTask.id,
+          previous_status: editingTask.status,
+          new_status: taskData.status,
+          completed_quantity: taskData.completed_quantity,
+          note: "Task edited",
+        });
+      }
     } else {
       const result = await supabase
         .from("office_tasks")
@@ -169,15 +179,49 @@ export default function TasksPage() {
 
     setShowForm(false);
     setEditingTask(null);
+    resetForm();
+    loadData();
+  }
+
+  async function updateTaskStatus(task: Task) {
+    const newStatus = prompt("নতুন Status লিখুন:", task.status);
+
+    if (!newStatus || !newStatus.trim()) return;
+
+    const qty = prompt(
+      "Completed Quantity:",
+      String(task.completed_quantity || 0)
+    );
+
+    const newQty = Number(qty);
+
+    const { error } = await supabase
+      .from("office_tasks")
+      .update({
+        status: newStatus.trim(),
+        completed_quantity: Number.isNaN(newQty) ? 0 : newQty,
+      })
+      .eq("id", task.id);
+
+    if (error) {
+      alert("Update Error: " + error.message);
+      return;
+    }
+
+    await supabase.from("task_updates").insert({
+      task_id: task.id,
+      previous_status: task.status,
+      new_status: newStatus.trim(),
+      completed_quantity: Number.isNaN(newQty) ? 0 : newQty,
+      note: "Quick status update",
+    });
+
+    alert("Status Updated! ✅");
     loadData();
   }
 
   async function deleteTask(id: string) {
-    const confirmDelete = confirm(
-      "এই Task টি Delete করতে চান?"
-    );
-
-    if (!confirmDelete) return;
+    if (!confirm("এই Task টি Delete করতে চান?")) return;
 
     const { error } = await supabase
       .from("office_tasks")
@@ -189,47 +233,28 @@ export default function TasksPage() {
       return;
     }
 
+    alert("Task Deleted! 🗑️");
     loadData();
   }
 
   return (
     <main style={pageStyle}>
-      {/* HEADER */}
       <div style={headerStyle}>
         <div>
           <h1 style={titleStyle}>Office Tasks</h1>
-
-          <p style={subtitleStyle}>
-            Manage all office work
-          </p>
+          <p style={subtitleStyle}>Manage all office work</p>
         </div>
 
-        <button
-          onClick={openAddForm}
-          style={buttonStyle}
-        >
+        <button onClick={openAddForm} style={buttonStyle}>
           + Add Task
         </button>
       </div>
 
-      {/* FORM */}
       {showForm && (
-        <form
-          onSubmit={saveTask}
-          style={formStyle}
-        >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: "20px",
-            }}
-          >
+        <form onSubmit={saveTask} style={formStyle}>
+          <div style={formHeader}>
             <h2 style={{ margin: 0 }}>
-              {editingTask
-                ? "Edit Task"
-                : "Add New Office Task"}
+              {editingTask ? "Edit Task" : "Add New Office Task"}
             </h2>
 
             <button
@@ -244,78 +269,47 @@ export default function TasksPage() {
             </button>
           </div>
 
-          <label style={labelStyle}>
-            Task Name *
-          </label>
-
+          <label style={labelStyle}>Task Name *</label>
           <input
-            type="text"
-            placeholder="যেমন: Cutting Order #101"
             value={form.task_name}
+            placeholder="যেমন: Cutting Order #101"
             onChange={(e) =>
-              setForm({
-                ...form,
-                task_name: e.target.value,
-              })
+              setForm({ ...form, task_name: e.target.value })
             }
             style={inputStyle}
           />
 
-          <label style={labelStyle}>
-            Description
-          </label>
-
+          <label style={labelStyle}>Description</label>
           <textarea
-            placeholder="কাজের বিস্তারিত"
             value={form.description}
+            placeholder="কাজের বিস্তারিত"
             onChange={(e) =>
-              setForm({
-                ...form,
-                description: e.target.value,
-              })
+              setForm({ ...form, description: e.target.value })
             }
             style={textareaStyle}
           />
 
-          <label style={labelStyle}>
-            Assigned To
-          </label>
-
+          <label style={labelStyle}>Assigned To</label>
           <select
             value={form.assigned_to}
             onChange={(e) =>
-              setForm({
-                ...form,
-                assigned_to: e.target.value,
-              })
+              setForm({ ...form, assigned_to: e.target.value })
             }
             style={inputStyle}
           >
-            <option value="">
-              -- Employee Select করুন --
-            </option>
-
+            <option value="">-- Employee Select করুন --</option>
             {employees.map((employee) => (
-              <option
-                key={employee.id}
-                value={employee.name}
-              >
+              <option key={employee.id} value={employee.name}>
                 {employee.name}
               </option>
             ))}
           </select>
 
-          <label style={labelStyle}>
-            Priority
-          </label>
-
+          <label style={labelStyle}>Priority</label>
           <select
             value={form.priority}
             onChange={(e) =>
-              setForm({
-                ...form,
-                priority: e.target.value,
-              })
+              setForm({ ...form, priority: e.target.value })
             }
             style={inputStyle}
           >
@@ -325,55 +319,36 @@ export default function TasksPage() {
             <option value="urgent">Urgent</option>
           </select>
 
-          <label style={labelStyle}>
-            Current Status
-          </label>
-
+          <label style={labelStyle}>Current Status</label>
           <input
-            type="text"
-            placeholder="যেমন: Cutting চলছে"
             value={form.status}
+            placeholder="যেমন: Cutting চলছে"
             onChange={(e) =>
-              setForm({
-                ...form,
-                status: e.target.value,
-              })
+              setForm({ ...form, status: e.target.value })
             }
             style={inputStyle}
           />
 
           <div style={twoColumnStyle}>
             <div>
-              <label style={labelStyle}>
-                Start Date
-              </label>
-
+              <label style={labelStyle}>Start Date</label>
               <input
                 type="date"
                 value={form.start_date}
                 onChange={(e) =>
-                  setForm({
-                    ...form,
-                    start_date: e.target.value,
-                  })
+                  setForm({ ...form, start_date: e.target.value })
                 }
                 style={inputStyle}
               />
             </div>
 
             <div>
-              <label style={labelStyle}>
-                Deadline
-              </label>
-
+              <label style={labelStyle}>Deadline</label>
               <input
                 type="date"
                 value={form.deadline}
                 onChange={(e) =>
-                  setForm({
-                    ...form,
-                    deadline: e.target.value,
-                  })
+                  setForm({ ...form, deadline: e.target.value })
                 }
                 style={inputStyle}
               />
@@ -382,29 +357,20 @@ export default function TasksPage() {
 
           <div style={twoColumnStyle}>
             <div>
-              <label style={labelStyle}>
-                Total Quantity
-              </label>
-
+              <label style={labelStyle}>Total Quantity</label>
               <input
                 type="number"
                 min="0"
                 value={form.total_quantity}
                 onChange={(e) =>
-                  setForm({
-                    ...form,
-                    total_quantity: e.target.value,
-                  })
+                  setForm({ ...form, total_quantity: e.target.value })
                 }
                 style={inputStyle}
               />
             </div>
 
             <div>
-              <label style={labelStyle}>
-                Completed Quantity
-              </label>
-
+              <label style={labelStyle}>Completed Quantity</label>
               <input
                 type="number"
                 min="0"
@@ -420,18 +386,12 @@ export default function TasksPage() {
             </div>
           </div>
 
-          <label style={labelStyle}>
-            Notes
-          </label>
-
+          <label style={labelStyle}>Notes</label>
           <textarea
-            placeholder="অতিরিক্ত তথ্য"
             value={form.notes}
+            placeholder="অতিরিক্ত তথ্য"
             onChange={(e) =>
-              setForm({
-                ...form,
-                notes: e.target.value,
-              })
+              setForm({ ...form, notes: e.target.value })
             }
             style={textareaStyle}
           />
@@ -450,7 +410,6 @@ export default function TasksPage() {
         </form>
       )}
 
-      {/* TASK TABLE */}
       <div style={tableWrapperStyle}>
         <table style={tableStyle}>
           <thead>
@@ -468,10 +427,7 @@ export default function TasksPage() {
           <tbody>
             {tasks.length === 0 ? (
               <tr>
-                <td
-                  colSpan={7}
-                  style={emptyStyle}
-                >
+                <td colSpan={7} style={emptyStyle}>
                   No office tasks yet
                 </td>
               </tr>
@@ -479,18 +435,10 @@ export default function TasksPage() {
               tasks.map((task) => (
                 <tr key={task.id}>
                   <td style={tdStyle}>
-                    <strong>
-                      {task.task_name}
-                    </strong>
+                    <strong>{task.task_name}</strong>
 
                     {task.description && (
-                      <div
-                        style={{
-                          color: "#777",
-                          fontSize: "13px",
-                          marginTop: "4px",
-                        }}
-                      >
+                      <div style={descriptionStyle}>
                         {task.description}
                       </div>
                     )}
@@ -500,12 +448,10 @@ export default function TasksPage() {
                     {task.assigned_to || "-"}
                   </td>
 
-                  <td style={tdStyle}>
-                    {task.priority}
-                  </td>
+                  <td style={tdStyle}>{task.priority}</td>
 
                   <td style={tdStyle}>
-                    {task.status}
+                    <strong>{task.status}</strong>
                   </td>
 
                   <td style={tdStyle}>
@@ -519,18 +465,21 @@ export default function TasksPage() {
 
                   <td style={tdStyle}>
                     <button
-                      onClick={() =>
-                        openEditForm(task)
-                      }
+                      onClick={() => updateTaskStatus(task)}
+                      style={updateButtonStyle}
+                    >
+                      🔄 Update
+                    </button>
+
+                    <button
+                      onClick={() => openEditForm(task)}
                       style={editButtonStyle}
                     >
                       ✏️ Edit
                     </button>
 
                     <button
-                      onClick={() =>
-                        deleteTask(task.id)
-                      }
+                      onClick={() => deleteTask(task.id)}
                       style={deleteButtonStyle}
                     >
                       🗑 Delete
@@ -545,8 +494,6 @@ export default function TasksPage() {
     </main>
   );
 }
-
-/* STYLES */
 
 const pageStyle = {
   padding: "30px",
@@ -582,14 +529,6 @@ const buttonStyle = {
   cursor: "pointer",
 };
 
-const closeButtonStyle = {
-  background: "#eee",
-  border: "none",
-  borderRadius: "6px",
-  padding: "7px 10px",
-  cursor: "pointer",
-};
-
 const formStyle = {
   background: "#fff",
   padding: "25px",
@@ -597,6 +536,21 @@ const formStyle = {
   marginBottom: "25px",
   border: "1px solid #ddd",
   maxWidth: "800px",
+};
+
+const formHeader = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  marginBottom: "20px",
+};
+
+const closeButtonStyle = {
+  background: "#eee",
+  border: "none",
+  borderRadius: "6px",
+  padding: "7px 10px",
+  cursor: "pointer",
 };
 
 const labelStyle = {
@@ -647,7 +601,7 @@ const tableWrapperStyle = {
 const tableStyle = {
   width: "100%",
   borderCollapse: "collapse" as const,
-  minWidth: "1000px",
+  minWidth: "1100px",
 };
 
 const thStyle = {
@@ -662,10 +616,25 @@ const tdStyle = {
   borderBottom: "1px solid #eee",
 };
 
+const descriptionStyle = {
+  color: "#777",
+  fontSize: "13px",
+  marginTop: "4px",
+};
+
 const emptyStyle = {
   padding: "40px",
   textAlign: "center" as const,
   color: "#777",
+};
+
+const updateButtonStyle = {
+  background: "#e0f2fe",
+  border: "none",
+  padding: "7px 10px",
+  borderRadius: "6px",
+  cursor: "pointer",
+  marginRight: "6px",
 };
 
 const editButtonStyle = {
