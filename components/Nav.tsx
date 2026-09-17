@@ -1,0 +1,3 @@
+ "use client";
+import Link from "next/link";import {createClient} from "../lib/supabase/client";import {useRouter} from "next/navigation";
+export default function Nav(){const r=useRouter();async function logout(){await createClient().auth.signOut();r.push("/login")}return <header className="topbar"><div className="brand">OfficeFlow Pro</div><nav className="nav"><Link href="/dashboard">Dashboard</Link><Link href="/tasks">Tasks</Link><Link href="/tasks/new">New Task</Link><Link href="/employees">Employees</Link><button className="btn secondary" onClick={logout}>Logout</button></nav></header>}
