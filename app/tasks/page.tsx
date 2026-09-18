@@ -161,13 +161,19 @@ export default function TasksPage() {
       error = result.error;
 
       if (!error) {
-        await supabase.from("task_updates").insert({
-          task_id: editingTask.id,
-          previous_status: editingTask.status,
-          new_status: taskData.status,
-          completed_quantity: taskData.completed_quantity,
-          note: "Task edited",
-        });
+        const { error: historyError } = await supabase
+          .from("office_task_updates")
+          .insert({
+            task_id: editingTask.id,
+            previous_status: editingTask.status,
+            new_status: taskData.status,
+            completed_quantity: taskData.completed_quantity,
+            note: "Task edited",
+          });
+
+        if (historyError) {
+          alert("Task updated, but History save হয়নি: " + historyError.message);
+        }
       }
     } else {
       const result = await supabase
@@ -225,15 +231,24 @@ export default function TasksPage() {
       return;
     }
 
-    await supabase.from("task_updates").insert({
-      task_id: task.id,
-      previous_status: task.status,
-      new_status: newStatus.trim(),
-      completed_quantity: finalQty,
-      note: "Quick status update",
-    });
+    const { error: historyError } = await supabase
+      .from("office_task_updates")
+      .insert({
+        task_id: task.id,
+        previous_status: task.status,
+        new_status: newStatus.trim(),
+        completed_quantity: finalQty,
+        note: "Quick status update",
+      });
 
-    alert("Status Updated! ✅");
+    if (historyError) {
+      alert(
+        "Status updated, but History save হয়নি: " +
+          historyError.message
+      );
+    } else {
+      alert("Status Updated! ✅");
+    }
 
     loadData();
   }
@@ -244,7 +259,7 @@ export default function TasksPage() {
     setHistoryLoading(true);
 
     const { data, error } = await supabase
-      .from("task_updates")
+      .from("office_task_updates")
       .select(
         "id, previous_status, new_status, completed_quantity, note, created_at"
       )
