@@ -1,6 +1,6 @@
 import "./globals.css";
 import type { Metadata } from "next";
-import AppShell from "./components/AppShell";
+import Sidebar from "./components/Sidebar";
 
 export const metadata: Metadata = {
   title: "OfficeFlow Pro",
@@ -15,7 +15,13 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <AppShell>{children}</AppShell>
+        <div className="app-layout">
+          <Sidebar />
+
+          <div className="main-content">
+            {children}
+          </div>
+        </div>
       </body>
     </html>
   );
