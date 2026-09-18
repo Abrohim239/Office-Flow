@@ -24,12 +24,25 @@ type Task = {
   notes: string | null;
 };
 
+type TaskUpdate = {
+  id: string;
+  previous_status: string | null;
+  new_status: string;
+  completed_quantity: number;
+  note: string | null;
+  created_at: string;
+};
+
 export default function TasksPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [loading, setLoading] = useState(false);
+
+  const [historyTask, setHistoryTask] = useState<Task | null>(null);
+  const [history, setHistory] = useState<TaskUpdate[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   const [form, setForm] = useState({
     task_name: "",
@@ -195,11 +208,15 @@ export default function TasksPage() {
 
     const newQty = Number(qty);
 
+    const finalQty = Number.isNaN(newQty)
+      ? 0
+      : newQty;
+
     const { error } = await supabase
       .from("office_tasks")
       .update({
         status: newStatus.trim(),
-        completed_quantity: Number.isNaN(newQty) ? 0 : newQty,
+        completed_quantity: finalQty,
       })
       .eq("id", task.id);
 
@@ -212,12 +229,36 @@ export default function TasksPage() {
       task_id: task.id,
       previous_status: task.status,
       new_status: newStatus.trim(),
-      completed_quantity: Number.isNaN(newQty) ? 0 : newQty,
+      completed_quantity: finalQty,
       note: "Quick status update",
     });
 
     alert("Status Updated! ✅");
+
     loadData();
+  }
+
+  async function showHistory(task: Task) {
+    setHistoryTask(task);
+    setHistory([]);
+    setHistoryLoading(true);
+
+    const { data, error } = await supabase
+      .from("task_updates")
+      .select(
+        "id, previous_status, new_status, completed_quantity, note, created_at"
+      )
+      .eq("task_id", task.id)
+      .order("created_at", { ascending: false });
+
+    setHistoryLoading(false);
+
+    if (error) {
+      alert("History Error: " + error.message);
+      return;
+    }
+
+    setHistory(data || []);
   }
 
   async function deleteTask(id: string) {
@@ -234,27 +275,42 @@ export default function TasksPage() {
     }
 
     alert("Task Deleted! 🗑️");
+
     loadData();
   }
 
   return (
     <main style={pageStyle}>
+
+      {/* HEADER */}
       <div style={headerStyle}>
         <div>
           <h1 style={titleStyle}>Office Tasks</h1>
-          <p style={subtitleStyle}>Manage all office work</p>
+
+          <p style={subtitleStyle}>
+            Manage all office work
+          </p>
         </div>
 
-        <button onClick={openAddForm} style={buttonStyle}>
+        <button
+          onClick={openAddForm}
+          style={buttonStyle}
+        >
           + Add Task
         </button>
       </div>
 
+      {/* FORM */}
       {showForm && (
-        <form onSubmit={saveTask} style={formStyle}>
+        <form
+          onSubmit={saveTask}
+          style={formStyle}
+        >
           <div style={formHeader}>
             <h2 style={{ margin: 0 }}>
-              {editingTask ? "Edit Task" : "Add New Office Task"}
+              {editingTask
+                ? "Edit Task"
+                : "Add New Office Task"}
             </h2>
 
             <button
@@ -269,116 +325,144 @@ export default function TasksPage() {
             </button>
           </div>
 
-          <label style={labelStyle}>Task Name *</label>
+          <label style={labelStyle}>
+            Task Name *
+          </label>
+
           <input
             value={form.task_name}
             placeholder="যেমন: Cutting Order #101"
             onChange={(e) =>
-              setForm({ ...form, task_name: e.target.value })
+              setForm({
+                ...form,
+                task_name: e.target.value,
+              })
             }
             style={inputStyle}
           />
 
-          <label style={labelStyle}>Description</label>
+          <label style={labelStyle}>
+            Description
+          </label>
+
           <textarea
             value={form.description}
             placeholder="কাজের বিস্তারিত"
             onChange={(e) =>
-              setForm({ ...form, description: e.target.value })
+              setForm({
+                ...form,
+                description: e.target.value,
+              })
             }
             style={textareaStyle}
           />
 
-          <label style={labelStyle}>Assigned To</label>
+          <label style={labelStyle}>
+            Assigned To
+          </label>
+
           <select
             value={form.assigned_to}
             onChange={(e) =>
-              setForm({ ...form, assigned_to: e.target.value })
+              setForm({
+                ...form,
+                assigned_to: e.target.value,
+              })
             }
             style={inputStyle}
           >
-            <option value="">-- Employee Select করুন --</option>
+            <option value="">
+              -- Employee Select করুন --
+            </option>
+
             {employees.map((employee) => (
-              <option key={employee.id} value={employee.name}>
+              <option
+                key={employee.id}
+                value={employee.name}
+              >
                 {employee.name}
               </option>
             ))}
           </select>
 
-          <label style={labelStyle}>Priority</label>
+          <label style={labelStyle}>
+            Priority
+          </label>
+
           <select
             value={form.priority}
             onChange={(e) =>
-              setForm({ ...form, priority: e.target.value })
+              setForm({
+                ...form,
+                priority: e.target.value,
+              })
             }
             style={inputStyle}
           >
-            <option value="low">Low</option>
-            <option value="medium">Medium</option>
-            <option value="high">High</option>
-            <option value="urgent">Urgent</option>
+            <option value="low">
+              Low
+            </option>
+
+            <option value="medium">
+              Medium
+            </option>
+
+            <option value="high">
+              High
+            </option>
+
+            <option value="urgent">
+              Urgent
+            </option>
           </select>
 
-          <label style={labelStyle}>Current Status</label>
+          <label style={labelStyle}>
+            Current Status
+          </label>
+
           <input
             value={form.status}
             placeholder="যেমন: Cutting চলছে"
             onChange={(e) =>
-              setForm({ ...form, status: e.target.value })
+              setForm({
+                ...form,
+                status: e.target.value,
+              })
             }
             style={inputStyle}
           />
 
           <div style={twoColumnStyle}>
             <div>
-              <label style={labelStyle}>Start Date</label>
+              <label style={labelStyle}>
+                Start Date
+              </label>
+
               <input
                 type="date"
                 value={form.start_date}
                 onChange={(e) =>
-                  setForm({ ...form, start_date: e.target.value })
+                  setForm({
+                    ...form,
+                    start_date: e.target.value,
+                  })
                 }
                 style={inputStyle}
               />
             </div>
 
             <div>
-              <label style={labelStyle}>Deadline</label>
+              <label style={labelStyle}>
+                Deadline
+              </label>
+
               <input
                 type="date"
                 value={form.deadline}
                 onChange={(e) =>
-                  setForm({ ...form, deadline: e.target.value })
-                }
-                style={inputStyle}
-              />
-            </div>
-          </div>
-
-          <div style={twoColumnStyle}>
-            <div>
-              <label style={labelStyle}>Total Quantity</label>
-              <input
-                type="number"
-                min="0"
-                value={form.total_quantity}
-                onChange={(e) =>
-                  setForm({ ...form, total_quantity: e.target.value })
-                }
-                style={inputStyle}
-              />
-            </div>
-
-            <div>
-              <label style={labelStyle}>Completed Quantity</label>
-              <input
-                type="number"
-                min="0"
-                value={form.completed_quantity}
-                onChange={(e) =>
                   setForm({
                     ...form,
-                    completed_quantity: e.target.value,
+                    deadline: e.target.value,
                   })
                 }
                 style={inputStyle}
@@ -386,12 +470,59 @@ export default function TasksPage() {
             </div>
           </div>
 
-          <label style={labelStyle}>Notes</label>
+          <div style={twoColumnStyle}>
+            <div>
+              <label style={labelStyle}>
+                Total Quantity
+              </label>
+
+              <input
+                type="number"
+                min="0"
+                value={form.total_quantity}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    total_quantity: e.target.value,
+                  })
+                }
+                style={inputStyle}
+              />
+            </div>
+
+            <div>
+              <label style={labelStyle}>
+                Completed Quantity
+              </label>
+
+              <input
+                type="number"
+                min="0"
+                value={form.completed_quantity}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    completed_quantity:
+                      e.target.value,
+                  })
+                }
+                style={inputStyle}
+              />
+            </div>
+          </div>
+
+          <label style={labelStyle}>
+            Notes
+          </label>
+
           <textarea
             value={form.notes}
             placeholder="অতিরিক্ত তথ্য"
             onChange={(e) =>
-              setForm({ ...form, notes: e.target.value })
+              setForm({
+                ...form,
+                notes: e.target.value,
+              })
             }
             style={textareaStyle}
           />
@@ -410,35 +541,67 @@ export default function TasksPage() {
         </form>
       )}
 
+      {/* TASK TABLE */}
       <div style={tableWrapperStyle}>
         <table style={tableStyle}>
+
           <thead>
             <tr>
-              <th style={thStyle}>Task</th>
-              <th style={thStyle}>Assigned To</th>
-              <th style={thStyle}>Priority</th>
-              <th style={thStyle}>Status</th>
-              <th style={thStyle}>Quantity</th>
-              <th style={thStyle}>Deadline</th>
-              <th style={thStyle}>Action</th>
+              <th style={thStyle}>
+                Task
+              </th>
+
+              <th style={thStyle}>
+                Assigned To
+              </th>
+
+              <th style={thStyle}>
+                Priority
+              </th>
+
+              <th style={thStyle}>
+                Status
+              </th>
+
+              <th style={thStyle}>
+                Quantity
+              </th>
+
+              <th style={thStyle}>
+                Deadline
+              </th>
+
+              <th style={thStyle}>
+                Action
+              </th>
             </tr>
           </thead>
 
           <tbody>
+
             {tasks.length === 0 ? (
               <tr>
-                <td colSpan={7} style={emptyStyle}>
+                <td
+                  colSpan={7}
+                  style={emptyStyle}
+                >
                   No office tasks yet
                 </td>
               </tr>
             ) : (
               tasks.map((task) => (
+
                 <tr key={task.id}>
+
                   <td style={tdStyle}>
-                    <strong>{task.task_name}</strong>
+                    <strong>
+                      {task.task_name}
+                    </strong>
 
                     {task.description && (
-                      <div style={descriptionStyle}>
+                      <div
+                        style={descriptionStyle}
+                      >
                         {task.description}
                       </div>
                     )}
@@ -448,14 +611,19 @@ export default function TasksPage() {
                     {task.assigned_to || "-"}
                   </td>
 
-                  <td style={tdStyle}>{task.priority}</td>
-
                   <td style={tdStyle}>
-                    <strong>{task.status}</strong>
+                    {task.priority}
                   </td>
 
                   <td style={tdStyle}>
-                    {task.completed_quantity} /{" "}
+                    <strong>
+                      {task.status}
+                    </strong>
+                  </td>
+
+                  <td style={tdStyle}>
+                    {task.completed_quantity}
+                    {" / "}
                     {task.total_quantity}
                   </td>
 
@@ -464,36 +632,174 @@ export default function TasksPage() {
                   </td>
 
                   <td style={tdStyle}>
+
                     <button
-                      onClick={() => updateTaskStatus(task)}
+                      onClick={() =>
+                        updateTaskStatus(task)
+                      }
                       style={updateButtonStyle}
                     >
                       🔄 Update
                     </button>
 
                     <button
-                      onClick={() => openEditForm(task)}
+                      onClick={() =>
+                        showHistory(task)
+                      }
+                      style={historyButtonStyle}
+                    >
+                      📜 History
+                    </button>
+
+                    <button
+                      onClick={() =>
+                        openEditForm(task)
+                      }
                       style={editButtonStyle}
                     >
                       ✏️ Edit
                     </button>
 
                     <button
-                      onClick={() => deleteTask(task.id)}
+                      onClick={() =>
+                        deleteTask(task.id)
+                      }
                       style={deleteButtonStyle}
                     >
                       🗑 Delete
                     </button>
+
                   </td>
+
                 </tr>
+
               ))
             )}
+
           </tbody>
+
         </table>
       </div>
+
+      {/* HISTORY POPUP */}
+      {historyTask && (
+        <div style={overlayStyle}>
+
+          <div style={historyModalStyle}>
+
+            <div style={historyHeaderStyle}>
+
+              <div>
+                <h2 style={{ margin: 0 }}>
+                  📜 Update History
+                </h2>
+
+                <p
+                  style={{
+                    margin: "5px 0 0",
+                    color: "#666",
+                  }}
+                >
+                  {historyTask.task_name}
+                </p>
+              </div>
+
+              <button
+                onClick={() =>
+                  setHistoryTask(null)
+                }
+                style={closeButtonStyle}
+              >
+                ✕
+              </button>
+
+            </div>
+
+            {historyLoading ? (
+              <div style={historyEmptyStyle}>
+                Loading history...
+              </div>
+            ) : history.length === 0 ? (
+              <div style={historyEmptyStyle}>
+                এই Task-এর কোনো update history নেই।
+              </div>
+            ) : (
+              <div>
+
+                {history.map((item) => (
+
+                  <div
+                    key={item.id}
+                    style={historyItemStyle}
+                  >
+
+                    <div
+                      style={{
+                        fontWeight: "700",
+                        marginBottom: "7px",
+                      }}
+                    >
+                      {item.previous_status || "New"}
+                      {" → "}
+                      {item.new_status}
+                    </div>
+
+                    <div
+                      style={{
+                        fontSize: "14px",
+                        color: "#555",
+                      }}
+                    >
+                      📦 Completed Quantity:{" "}
+                      <strong>
+                        {item.completed_quantity}
+                      </strong>
+                    </div>
+
+                    {item.note && (
+                      <div
+                        style={{
+                          fontSize: "14px",
+                          color: "#555",
+                          marginTop: "5px",
+                        }}
+                      >
+                        📝 {item.note}
+                      </div>
+                    )}
+
+                    <div
+                      style={{
+                        fontSize: "12px",
+                        color: "#888",
+                        marginTop: "7px",
+                      }}
+                    >
+                      🕒{" "}
+                      {new Date(
+                        item.created_at
+                      ).toLocaleString()}
+                    </div>
+
+                  </div>
+
+                ))}
+
+              </div>
+            )}
+
+          </div>
+
+        </div>
+      )}
+
     </main>
   );
 }
+
+/* =========================
+   STYLES
+========================= */
 
 const pageStyle = {
   padding: "30px",
@@ -601,7 +907,7 @@ const tableWrapperStyle = {
 const tableStyle = {
   width: "100%",
   borderCollapse: "collapse" as const,
-  minWidth: "1100px",
+  minWidth: "1200px",
 };
 
 const thStyle = {
@@ -614,6 +920,7 @@ const thStyle = {
 const tdStyle = {
   padding: "14px",
   borderBottom: "1px solid #eee",
+  verticalAlign: "top" as const,
 };
 
 const descriptionStyle = {
@@ -635,6 +942,17 @@ const updateButtonStyle = {
   borderRadius: "6px",
   cursor: "pointer",
   marginRight: "6px",
+  marginBottom: "5px",
+};
+
+const historyButtonStyle = {
+  background: "#ede9fe",
+  border: "none",
+  padding: "7px 10px",
+  borderRadius: "6px",
+  cursor: "pointer",
+  marginRight: "6px",
+  marginBottom: "5px",
 };
 
 const editButtonStyle = {
@@ -644,6 +962,7 @@ const editButtonStyle = {
   borderRadius: "6px",
   cursor: "pointer",
   marginRight: "6px",
+  marginBottom: "5px",
 };
 
 const deleteButtonStyle = {
@@ -652,4 +971,51 @@ const deleteButtonStyle = {
   padding: "7px 10px",
   borderRadius: "6px",
   cursor: "pointer",
+  marginBottom: "5px",
+};
+
+const overlayStyle = {
+  position: "fixed" as const,
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+  background: "rgba(0,0,0,0.5)",
+  display: "flex",
+  justifyContent: "center",
+  alignItems: "center",
+  padding: "20px",
+  zIndex: 9999,
+};
+
+const historyModalStyle = {
+  background: "#fff",
+  width: "100%",
+  maxWidth: "650px",
+  maxHeight: "80vh",
+  overflowY: "auto" as const,
+  borderRadius: "14px",
+  padding: "25px",
+  boxSizing: "border-box" as const,
+};
+
+const historyHeaderStyle = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  marginBottom: "20px",
+};
+
+const historyItemStyle = {
+  border: "1px solid #ddd",
+  borderRadius: "10px",
+  padding: "15px",
+  marginBottom: "10px",
+  background: "#fafafa",
+};
+
+const historyEmptyStyle = {
+  padding: "40px 10px",
+  textAlign: "center" as const,
+  color: "#777",
 };
