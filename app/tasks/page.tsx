@@ -279,24 +279,24 @@ export default function TasksPage() {
 async function deleteTask(id: string) {
   if (!confirm("এই Task টি Delete করতে চান?")) return;
 
-  const { error } = await supabase
-    .from("office_tasks")
-    .delete()
-    .eq("id", id);
+  const { data, error } = await supabase
+    .rpc("delete_office_task", {
+      task_id: id,
+    });
 
   if (error) {
     alert("Delete Error: " + error.message);
     return;
   }
 
-  setTasks((prev) => prev.filter((task) => task.id !== id));
-
-  if (historyTask?.id === id) {
-    setHistoryTask(null);
-    setHistory([]);
+  if (!data) {
+    alert("Task Delete হয়নি।");
+    return;
   }
 
-  alert("Task Deleted! 🗑️");
+  setTasks((prev) => prev.filter((task) => task.id !== id));
+
+  alert("Task Deleted Successfully! 🗑️");
 }
 
   return (
