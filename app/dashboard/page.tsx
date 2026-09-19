@@ -90,7 +90,6 @@ const inProgressTasks = tasks.filter((t) => {
 
   return deadline < today && !isCompleted;
 }).length;
-  });
 
   const totalQuantity = tasks.reduce(
     (sum, t) => sum + Number(t.total_quantity || 0),
