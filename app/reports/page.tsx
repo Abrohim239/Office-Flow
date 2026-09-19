@@ -33,10 +33,17 @@ function isCompleted(task: Task) {
 
   return status === "completed" || status === "complete";
 }
-}
 
 function isInProgress(task: Task) {
   return !isPending(task) && !isCompleted(task);
+}
+
+function isOverdue(task: Task) {
+  if (!task.deadline || isCompleted(task)) return false;
+
+  const today = new Date().toISOString().split("T")[0];
+
+  return task.deadline < today;
 }
 
 function isOverdue(task: Task) {
