@@ -307,17 +307,6 @@ async function deleteTask(id: string) {
   alert("Task Deleted! 🗑️");
   }
 
-  // UI থেকে Task সরিয়ে দেবে
-  setTasks((prev) => prev.filter((task) => task.id !== id));
-
-  // যদি History popup ওই Task-এর জন্য খোলা থাকে
-  if (historyTask?.id === id) {
-    setHistoryTask(null);
-    setHistory([]);
-  }
-
-  alert("Task Deleted! 🗑️");
-}
 
   return (
     <main style={pageStyle}>
