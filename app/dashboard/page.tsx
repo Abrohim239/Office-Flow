@@ -43,20 +43,24 @@ export default function DashboardPage() {
 
   const totalTasks = tasks.length;
 
-  const completedTasks = tasks.filter(
-    (t) => t.status.toLowerCase() === "completed"
-  ).length;
+const completedTasks = tasks.filter((t) => {
+  const status = t.status.trim().toLowerCase();
+  return status === "completed" || status === "complete";
+}).length;
 
-  const pendingTasks = tasks.filter(
-    (t) => t.status.toLowerCase() === "pending"
-  ).length;
+const pendingTasks = tasks.filter((t) => {
+  return t.status.trim().toLowerCase() === "pending";
+}).length;
 
-  const inProgressTasks = tasks.filter(
-    (t) =>
-      t.status.toLowerCase() !== "pending" &&
-      t.status.toLowerCase() !== "completed"
-  ).length;
+const inProgressTasks = tasks.filter((t) => {
+  const status = t.status.trim().toLowerCase();
 
+  return (
+    status !== "pending" &&
+    status !== "completed" &&
+    status !== "complete"
+  );
+}).length;
   const overdueTasks = tasks.filter((t) => {
     if (!t.deadline) return false;
 
@@ -66,10 +70,13 @@ export default function DashboardPage() {
     const deadline = new Date(t.deadline);
     deadline.setHours(0, 0, 0, 0);
 
-    return (
-      deadline < today &&
-      t.status.toLowerCase() !== "completed"
-    );
+  const status = t.status.trim().toLowerCase();
+
+return (
+  deadline < today &&
+  status !== "completed" &&
+  status !== "complete"
+);
   });
 
   const totalQuantity = tasks.reduce(
