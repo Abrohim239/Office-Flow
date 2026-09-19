@@ -29,7 +29,10 @@ function isPending(task: Task) {
 }
 
 function isCompleted(task: Task) {
-  return getStatus(task) === "completed";
+  const status = getStatus(task);
+
+  return status === "completed" || status === "complete";
+}
 }
 
 function isInProgress(task: Task) {
