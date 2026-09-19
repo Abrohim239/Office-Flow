@@ -46,13 +46,6 @@ function isOverdue(task: Task) {
   return task.deadline < today;
 }
 
-function isOverdue(task: Task) {
-  if (!task.deadline || isCompleted(task)) return false;
-
-  const today = new Date().toISOString().split("T")[0];
-
-  return task.deadline < today;
-}
 
 export default function ReportsPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
