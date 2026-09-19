@@ -299,7 +299,6 @@ async function deleteTask(id: string) {
   alert("Task Deleted! 🗑️");
 }
 
-
   return (
     <main style={pageStyle}>
 
