@@ -223,7 +223,7 @@ const inProgressTasks = tasks.filter((t) => {
 
         <ReportRow
           label="⚠️ Overdue"
-          value={overdueTasks.length}
+          value={overdueTasks}
           total={totalTasks}
         />
       </div>
