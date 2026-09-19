@@ -71,21 +71,25 @@ const inProgressTasks = tasks.filter((t) => {
   return status !== "pending" && !isCompleted;
 }).length;
   const overdueTasks = tasks.filter((t) => {
-    if (!t.deadline) return false;
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const deadline = new Date(t.deadline);
-    deadline.setHours(0, 0, 0, 0);
+  if (!t.deadline) return false;
 
   const status = t.status.trim().toLowerCase();
+  const total = Number(t.total_quantity || 0);
+  const completed = Number(t.completed_quantity || 0);
 
-return (
-  deadline < today &&
-  status !== "completed" &&
-  status !== "complete"
-);
+  const isCompleted =
+    status === "completed" ||
+    status === "complete" ||
+    (total > 0 && completed >= total);
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const deadline = new Date(t.deadline);
+  deadline.setHours(0, 0, 0, 0);
+
+  return deadline < today && !isCompleted;
+}).length;
   });
 
   const totalQuantity = tasks.reduce(
