@@ -70,7 +70,7 @@ const inProgressTasks = tasks.filter((t) => {
 
   return status !== "pending" && !isCompleted;
 }).length;
- const overdueTasks = tasks.filter((t) => {
+const overdueTasks = tasks.filter((t) => {
   if (!t.deadline) return false;
 
   const status = t.status.trim().toLowerCase();
@@ -89,8 +89,7 @@ const inProgressTasks = tasks.filter((t) => {
   deadline.setHours(0, 0, 0, 0);
 
   return deadline < today && !isCompleted;
-}).length;
-
+});
   const totalQuantity = tasks.reduce(
     (sum, t) => sum + Number(t.total_quantity || 0),
     0
@@ -180,7 +179,7 @@ const inProgressTasks = tasks.filter((t) => {
 
         <StatCard
           title="Overdue"
-          value={overdueTasks}
+         value={overdueTasks.length}
           icon="⚠️"
         />
 
@@ -223,7 +222,7 @@ const inProgressTasks = tasks.filter((t) => {
 
         <ReportRow
           label="⚠️ Overdue"
-          value={overdueTasks}
+         value={overdueTasks.length}
           total={totalTasks}
         />
       </div>
@@ -261,7 +260,7 @@ const inProgressTasks = tasks.filter((t) => {
           </div>
         ) : (
           <div>
-            {overdueTasks.map((task) => (
+       {overdueTasks.map((task) => (
               <div
                 key={task.id}
                 style={overdueRow}
