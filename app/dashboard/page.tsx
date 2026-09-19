@@ -255,7 +255,7 @@ const inProgressTasks = tasks.filter((t) => {
           ⚠️ Overdue Tasks
         </h2>
 
-        {overdueTasks.length === 0 ? (
+        {overdueTasks === 0 ? (
           <div style={successBox}>
             ✅ কোনো Overdue Task নেই
           </div>
