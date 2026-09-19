@@ -42,10 +42,16 @@ export default function DashboardPage() {
   }, []);
 
   const totalTasks = tasks.length;
-
 const completedTasks = tasks.filter((t) => {
   const status = t.status.trim().toLowerCase();
-  return status === "completed" || status === "complete";
+  const total = Number(t.total_quantity || 0);
+  const completed = Number(t.completed_quantity || 0);
+
+  return (
+    status === "completed" ||
+    status === "complete" ||
+    (total > 0 && completed >= total)
+  );
 }).length;
 
 const pendingTasks = tasks.filter((t) => {
@@ -54,12 +60,15 @@ const pendingTasks = tasks.filter((t) => {
 
 const inProgressTasks = tasks.filter((t) => {
   const status = t.status.trim().toLowerCase();
+  const total = Number(t.total_quantity || 0);
+  const completed = Number(t.completed_quantity || 0);
 
-  return (
-    status !== "pending" &&
-    status !== "completed" &&
-    status !== "complete"
-  );
+  const isCompleted =
+    status === "completed" ||
+    status === "complete" ||
+    (total > 0 && completed >= total);
+
+  return status !== "pending" && !isCompleted;
 }).length;
   const overdueTasks = tasks.filter((t) => {
     if (!t.deadline) return false;
