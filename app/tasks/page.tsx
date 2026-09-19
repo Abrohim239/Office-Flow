@@ -276,23 +276,30 @@ export default function TasksPage() {
     setHistory(data || []);
   }
 
-  async function deleteTask(id: string) {
-    if (!confirm("এই Task টি Delete করতে চান?")) return;
+async function deleteTask(id: string) {
+  if (!confirm("এই Task টি Delete করতে চান?")) return;
 
-    const { error } = await supabase
-      .from("office_tasks")
-      .delete()
-      .eq("id", id);
+  const { error } = await supabase
+    .from("office_tasks")
+    .delete()
+    .eq("id", id);
 
-    if (error) {
-      alert("Delete Error: " + error.message);
-      return;
-    }
-
-    alert("Task Deleted! 🗑️");
-
-    loadData();
+  if (error) {
+    alert("Delete Error: " + error.message);
+    return;
   }
+
+  // UI থেকে Task সরিয়ে দেবে
+  setTasks((prev) => prev.filter((task) => task.id !== id));
+
+  // যদি History popup ওই Task-এর জন্য খোলা থাকে
+  if (historyTask?.id === id) {
+    setHistoryTask(null);
+    setHistory([]);
+  }
+
+  alert("Task Deleted! 🗑️");
+}
 
   return (
     <main style={pageStyle}>
