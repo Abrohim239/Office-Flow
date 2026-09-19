@@ -1,31 +1,4 @@
-import "./globals.css";
-import type { Metadata } from "next";
-import Sidebar from "./components/Sidebar";
-
-export const metadata: Metadata = {
-  title: "OfficeFlow Pro",
-  description: "Office Task & Delivery Management",
-};
-
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  return (
-    <html lang="en">
-      <body>
-        <div className="app-layout">
-          <Sidebar />
-
-          <div className="main-content">
-            {children}
-          </div>
-        </div>
-      </body>
-    </html>
-  );
-}"use client";
+"use client";
 
 import { useEffect, useState } from "react";
 import { createClient } from "../../lib/supabase/client";
@@ -106,6 +79,7 @@ export default function PublicView() {
               {tasks.map((task) => {
                 const total = Number(task.total_quantity || 0);
                 const completed = Number(task.completed_quantity || 0);
+
                 const progress =
                   total > 0
                     ? Math.min(100, Math.round((completed / total) * 100))
@@ -115,13 +89,18 @@ export default function PublicView() {
                   <tr key={task.id}>
                     <td style={td}>{task.task_name}</td>
                     <td style={td}>{task.assigned_to || "-"}</td>
+
                     <td style={td}>
                       <strong>{task.status || "Pending"}</strong>
                     </td>
+
                     <td style={td}>{task.priority || "-"}</td>
+
                     <td style={td}>{task.deadline || "-"}</td>
+
                     <td style={td}>
                       {completed} / {total}
+
                       <div
                         style={{
                           height: "7px",
@@ -139,6 +118,7 @@ export default function PublicView() {
                           }}
                         />
                       </div>
+
                       <small>{progress}%</small>
                     </td>
                   </tr>
