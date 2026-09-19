@@ -305,7 +305,6 @@ async function deleteTask(id: string) {
   }
 
   alert("Task Deleted! 🗑️");
-}
   }
 
   // UI থেকে Task সরিয়ে দেবে
