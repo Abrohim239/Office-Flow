@@ -180,7 +180,7 @@ const inProgressTasks = tasks.filter((t) => {
 
         <StatCard
           title="Overdue"
-          value={overdueTasks.length}
+          value={overdueTasks}
           icon="⚠️"
         />
 
