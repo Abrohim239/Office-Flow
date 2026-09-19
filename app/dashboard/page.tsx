@@ -70,7 +70,7 @@ const inProgressTasks = tasks.filter((t) => {
 
   return status !== "pending" && !isCompleted;
 }).length;
-  const overdueTasks = tasks.filter((t) => {
+ const overdueTasks = tasks.filter((t) => {
   if (!t.deadline) return false;
 
   const status = t.status.trim().toLowerCase();
