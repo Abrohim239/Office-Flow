@@ -31,7 +31,14 @@ function isPending(task: Task) {
 function isCompleted(task: Task) {
   const status = getStatus(task);
 
-  return status === "completed" || status === "complete";
+  const total = Number(task.total_quantity || 0);
+  const completed = Number(task.completed_quantity || 0);
+
+  return (
+    status === "completed" ||
+    status === "complete" ||
+    (total > 0 && completed >= total)
+  );
 }
 
 function isInProgress(task: Task) {
