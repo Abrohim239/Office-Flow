@@ -25,6 +25,9 @@ export default function Sidebar() {
         <Link href="/employees">👥 Employees</Link>
         <Link href="/tasks">📋 Tasks</Link>
         <Link href="/reports">📊 Reports</Link>
+        <Link href="/accounts">
+  💰 Client Accounts
+</Link>
       </nav>
 
       <div className="sidebar-bottom">
