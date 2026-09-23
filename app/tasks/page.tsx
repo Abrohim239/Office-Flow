@@ -161,15 +161,16 @@ export default function TasksPage() {
       error = result.error;
 
       if (!error) {
-        const { error: historyError } = await supabase
-          .from("office_task_updates")
-          .insert({
-            task_id: editingTask.id,
-            previous_status: editingTask.status,
-            new_status: taskData.status,
-            completed_quantity: taskData.completed_quantity,
-            note: "Task edited",
-          });
+const { error: historyError } = await supabase.rpc(
+  "add_office_task_history",
+  {
+    p_task_id: task.id,
+    p_previous_status: task.status,
+    p_new_status: newStatus.trim(),
+    p_completed_quantity: finalQty,
+    p_note: "Quick status update",
+  }
+);
 
         if (historyError) {
           alert("Task updated, but History save হয়নি: " + historyError.message);
@@ -231,15 +232,16 @@ export default function TasksPage() {
       return;
     }
 
-    const { error: historyError } = await supabase
-      .from("office_task_updates")
-      .insert({
-        task_id: task.id,
-        previous_status: task.status,
-        new_status: newStatus.trim(),
-        completed_quantity: finalQty,
-        note: "Quick status update",
-      });
+ const { error: historyError } = await supabase.rpc(
+  "add_office_task_history",
+  {
+    p_task_id: editingTask.id,
+    p_previous_status: editingTask.status,
+    p_new_status: taskData.status,
+    p_completed_quantity: taskData.completed_quantity,
+    p_note: "Task edited",
+  }
+);
 
     if (historyError) {
       alert(
