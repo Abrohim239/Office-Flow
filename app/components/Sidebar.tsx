@@ -31,6 +31,9 @@ export default function Sidebar() {
         <Link href="/money-out">
   💸 Money Out
 </Link>
+        <Link href="/financial-reports">
+  📊 Financial Reports
+</Link>
       </nav>
 
       <div className="sidebar-bottom">
