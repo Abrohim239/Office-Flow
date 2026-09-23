@@ -48,7 +48,7 @@ export default function FinancialReportsPage() {
   const [payments, setPayments] = useState<Payment[]>([]);
   const [moneyOut, setMoneyOut] = useState<MoneyOut[]>([]);
   const [loading, setLoading] = useState(true);
-
+  const [selectedMonth, setSelectedMonth] = useState("");
   async function loadData() {
     setLoading(true);
 
@@ -158,7 +158,11 @@ export default function FinancialReportsPage() {
 
     return Array.from(set).sort().reverse();
   }, [bills, payments, moneyOut]);
-
+  useEffect(() => {
+    if (months.length > 0 && !selectedMonth) {
+      setSelectedMonth(months[0]);
+    }
+  }, [months, selectedMonth]);
   function getMonthlyData(month: string) {
     const billBDT = bills
       .filter(
@@ -430,127 +434,212 @@ export default function FinancialReportsPage() {
 
             </div>
 
-            {/* MONTHLY REPORT */}
-            <section style={styles.section}>
+   {/* MONTHLY REPORT */}
+<section style={styles.section}>
 
-              <h2 style={styles.heading}>
-                📅 Monthly Financial Report
-              </h2>
+  <div
+    style={{
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      gap: "15px",
+      flexWrap: "wrap",
+      marginBottom: "20px",
+    }}
+  >
+    <h2 style={styles.heading}>
+      📅 Monthly Financial Report
+    </h2>
 
-              {months.length === 0 ? (
-                <p style={styles.empty}>
-                  এখনো কোনো Financial Data নেই।
-                </p>
-              ) : (
-                <div style={styles.tableWrapper}>
-                  <table style={styles.table}>
+    <select
+      value={selectedMonth}
+      onChange={(e) => setSelectedMonth(e.target.value)}
+      style={{
+        padding: "10px 14px",
+        border: "1px solid #d1d5db",
+        borderRadius: "8px",
+        fontSize: "15px",
+        background: "white",
+        minWidth: "190px",
+      }}
+    >
+      <option value="">Select Month</option>
 
-                    <thead>
-                      <tr>
-                        <th style={styles.th}>
-                          Month
-                        </th>
+      {months.map((month) => (
+        <option key={month} value={month}>
+          {monthName(month)}
+        </option>
+      ))}
+    </select>
+  </div>
 
-                        <th style={styles.th}>
-                          Bill
-                        </th>
+  {selectedMonth ? (
+    <>
+      {(() => {
+        const data = getMonthlyData(selectedMonth);
 
-                        <th style={styles.th}>
-                          Received
-                        </th>
+        return (
+          <>
+            {/* BDT MONTHLY */}
+            <h3
+              style={{
+                marginTop: "10px",
+                marginBottom: "12px",
+              }}
+            >
+              🇧🇩 {monthName(selectedMonth)} — BDT Report
+            </h3>
 
-                        <th style={styles.th}>
-                          Due
-                        </th>
+            <div style={styles.tableWrapper}>
+              <table style={styles.table}>
+                <thead>
+                  <tr>
+                    <th style={styles.th}>Bill</th>
+                    <th style={styles.th}>Received</th>
+                    <th style={styles.th}>Due</th>
+                    <th style={styles.th}>Money Out</th>
+                    <th style={styles.th}>Surplus / Deficit</th>
+                  </tr>
+                </thead>
 
-                        <th style={styles.th}>
-                          Money Out
-                        </th>
+                <tbody>
+                  <tr>
+                    <td style={styles.td}>
+                      ৳{data.billBDT.toLocaleString()}
+                    </td>
 
-                        <th style={styles.th}>
-                          Surplus / Deficit
-                        </th>
-                      </tr>
-                    </thead>
+                    <td
+                      style={{
+                        ...styles.td,
+                        color: "#16a34a",
+                        fontWeight: 600,
+                      }}
+                    >
+                      ৳{data.receivedBDT.toLocaleString()}
+                    </td>
 
-                    <tbody>
-                      {months.map((month) => {
-                        const data =
-                          getMonthlyData(month);
+                    <td
+                      style={{
+                        ...styles.td,
+                        color:
+                          data.dueBDT > 0
+                            ? "#dc2626"
+                            : "#16a34a",
+                        fontWeight: 600,
+                      }}
+                    >
+                      ৳{data.dueBDT.toLocaleString()}
+                    </td>
 
-                        return (
-                          <tr key={month}>
+                    <td style={styles.td}>
+                      ৳{data.outBDT.toLocaleString()}
+                    </td>
 
-                            <td style={styles.td}>
-                              <strong>
-                                {monthName(month)}
-                              </strong>
-                            </td>
+                    <td
+                      style={{
+                        ...styles.td,
+                        color:
+                          data.surplusBDT >= 0
+                            ? "#16a34a"
+                            : "#dc2626",
+                        fontWeight: 700,
+                      }}
+                    >
+                      {data.surplusBDT >= 0 ? "+" : "-"}৳
+                      {Math.abs(
+                        data.surplusBDT
+                      ).toLocaleString()}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
 
-                            <td style={styles.td}>
-                              ৳
-                              {data.billBDT.toLocaleString()}
-                            </td>
+            {/* USD MONTHLY */}
+            <h3
+              style={{
+                marginTop: "30px",
+                marginBottom: "12px",
+              }}
+            >
+              🇺🇸 {monthName(selectedMonth)} — USD Report
+            </h3>
 
-                            <td
-                              style={{
-                                ...styles.td,
-                                color: "#16a34a",
-                                fontWeight: 600,
-                              }}
-                            >
-                              ৳
-                              {data.receivedBDT.toLocaleString()}
-                            </td>
+            <div style={styles.tableWrapper}>
+              <table style={styles.table}>
+                <thead>
+                  <tr>
+                    <th style={styles.th}>Bill</th>
+                    <th style={styles.th}>Received</th>
+                    <th style={styles.th}>Due</th>
+                    <th style={styles.th}>Money Out</th>
+                    <th style={styles.th}>Surplus / Deficit</th>
+                  </tr>
+                </thead>
 
-                            <td
-                              style={{
-                                ...styles.td,
-                                color:
-                                  data.dueBDT > 0
-                                    ? "#dc2626"
-                                    : "#16a34a",
-                                fontWeight: 600,
-                              }}
-                            >
-                              ৳
-                              {data.dueBDT.toLocaleString()}
-                            </td>
+                <tbody>
+                  <tr>
+                    <td style={styles.td}>
+                      ${data.billUSD.toLocaleString()}
+                    </td>
 
-                            <td style={styles.td}>
-                              ৳
-                              {data.outBDT.toLocaleString()}
-                            </td>
+                    <td
+                      style={{
+                        ...styles.td,
+                        color: "#16a34a",
+                        fontWeight: 600,
+                      }}
+                    >
+                      ${data.receivedUSD.toLocaleString()}
+                    </td>
 
-                            <td
-                              style={{
-                                ...styles.td,
-                                color:
-                                  data.surplusBDT >= 0
-                                    ? "#16a34a"
-                                    : "#dc2626",
-                                fontWeight: 700,
-                              }}
-                            >
-                              {data.surplusBDT >= 0
-                                ? "+"
-                                : "-"}
-                              ৳
-                              {Math.abs(
-                                data.surplusBDT
-                              ).toLocaleString()}
-                            </td>
+                    <td
+                      style={{
+                        ...styles.td,
+                        color:
+                          data.dueUSD > 0
+                            ? "#dc2626"
+                            : "#16a34a",
+                        fontWeight: 600,
+                      }}
+                    >
+                      ${data.dueUSD.toLocaleString()}
+                    </td>
 
-                          </tr>
-                        );
-                      })}
-                    </tbody>
+                    <td style={styles.td}>
+                      ${data.outUSD.toLocaleString()}
+                    </td>
 
-                  </table>
-                </div>
-              )}
+                    <td
+                      style={{
+                        ...styles.td,
+                        color:
+                          data.surplusUSD >= 0
+                            ? "#16a34a"
+                            : "#dc2626",
+                        fontWeight: 700,
+                      }}
+                    >
+                      {data.surplusUSD >= 0 ? "+" : "-"}$
+                      {Math.abs(
+                        data.surplusUSD
+                      ).toLocaleString()}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </>
+        );
+      })()}
+    </>
+  ) : (
+    <p style={styles.empty}>
+      এখনো কোনো Financial Data নেই।
+    </p>
+  )}
 
-            </section>
+</section>
 
             {/* NOTE */}
             <div style={styles.note}>
