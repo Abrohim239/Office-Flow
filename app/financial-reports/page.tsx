@@ -49,6 +49,14 @@ export default function FinancialReportsPage() {
   const [moneyOut, setMoneyOut] = useState<MoneyOut[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedMonth, setSelectedMonth] = useState("");
+  function printMonthlyReport() {
+  if (!selectedMonth) {
+    alert("আগে একটি Month Select করুন");
+    return;
+  }
+
+  window.print();
+}
   async function loadData() {
     setLoading(true);
 
@@ -450,7 +458,20 @@ export default function FinancialReportsPage() {
     <h2 style={styles.heading}>
       📅 Monthly Financial Report
     </h2>
-
+      <button
+  onClick={printMonthlyReport}
+  style={{
+    padding: "10px 16px",
+    border: "none",
+    borderRadius: "8px",
+    background: "#111827",
+    color: "white",
+    fontSize: "15px",
+    cursor: "pointer",
+  }}
+>
+  🖨️ Print Report
+</button>
     <select
       value={selectedMonth}
       onChange={(e) => setSelectedMonth(e.target.value)}
