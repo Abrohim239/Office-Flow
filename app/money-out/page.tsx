@@ -52,53 +52,56 @@ export default function MoneyOutPage() {
     loadData();
   }, []);
 
-  async function addMoneyOut(e: React.FormEvent) {
-    e.preventDefault();
+async function addMoneyOut(e: React.FormEvent) {
+  e.preventDefault();
 
-    if (!form.paid_to.trim()) {
-      alert("Paid To দিন");
-      return;
-    }
-
-    if (!form.amount || Number(form.amount) <= 0) {
-      alert("Amount দিন");
-      return;
-    }
-
-    const { error } = await supabase
-      .from("money_out")
-      .insert([
-        {
-          paid_to: form.paid_to.trim(),
-          amount: Number(form.amount),
-          currency: form.currency,
-          category: form.category,
-          payment_date: form.payment_date,
-          payment_method: form.payment_method,
-          note: form.note.trim() || null,
-        },
-      ]);
-
-    if (error) {
-      alert("Money Out Error: " + error.message);
-      return;
-    }
-
-    alert("Money Out Added Successfully! 💸");
-
-    setForm({
-      paid_to: "",
-      amount: "",
-      currency: "BDT",
-      category: "Other",
-      payment_date: new Date().toISOString().split("T")[0],
-      payment_method: "Cash",
-      note: "",
-    });
-
-    loadData();
+  if (!form.paid_to.trim()) {
+    alert("Paid To দিন");
+    return;
   }
 
+  if (!form.amount || Number(form.amount) <= 0) {
+    alert("Amount দিন");
+    return;
+  }
+
+  const { data, error } = await supabase.rpc(
+    "add_money_out",
+    {
+      p_paid_to: form.paid_to.trim(),
+      p_amount: Number(form.amount),
+      p_currency: form.currency,
+      p_category: form.category,
+      p_payment_date: form.payment_date,
+      p_payment_method: form.payment_method,
+      p_note: form.note.trim() || null,
+    }
+  );
+
+  if (error) {
+    alert("Money Out Error: " + error.message);
+    return;
+  }
+
+  if (!data) {
+    alert("Money Out Save হয়নি।");
+    return;
+  }
+
+  alert("Money Out Added Successfully! 💸");
+
+  setForm({
+    paid_to: "",
+    amount: "",
+    currency: "BDT",
+    category: "Other",
+    payment_date: new Date().toISOString().split("T")[0],
+    payment_method: "Cash",
+    note: "",
+  });
+
+  loadData();
+}
   async function deleteRecord(id: string) {
     if (!confirm("এই Expense Delete করতে চান?")) return;
 
