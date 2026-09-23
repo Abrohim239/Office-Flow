@@ -128,89 +128,83 @@ export default function TasksPage() {
   }
 
   async function saveTask(e: React.FormEvent) {
-    e.preventDefault();
+  e.preventDefault();
 
-    if (!form.task_name.trim()) {
-      alert("Task Name দিন");
-      return;
+  if (!form.task_name.trim()) {
+    alert("Task Name দিন");
+    return;
+  }
+
+  setLoading(true);
+
+  const taskData = {
+    task_name: form.task_name.trim(),
+    description: form.description.trim(),
+    assigned_to: form.assigned_to,
+    priority: form.priority,
+    status: form.status.trim() || "Pending",
+    start_date: form.start_date || null,
+    deadline: form.deadline || null,
+    total_quantity: Number(form.total_quantity) || 0,
+    completed_quantity: Number(form.completed_quantity) || 0,
+    notes: form.notes.trim(),
+  };
+
+  let error;
+
+  if (editingTask) {
+    const result = await supabase
+      .from("office_tasks")
+      .update(taskData)
+      .eq("id", editingTask.id);
+
+    error = result.error;
+
+    if (!error) {
+      const { error: historyError } = await supabase.rpc(
+        "add_office_task_history",
+        {
+          p_task_id: editingTask.id,
+          p_previous_status: editingTask.status,
+          p_new_status: taskData.status,
+          p_completed_quantity: taskData.completed_quantity,
+          p_note: "Task edited",
+        }
+      );
+
+      if (historyError) {
+        alert(
+          "Task updated, but History save হয়নি: " +
+            historyError.message
+        );
+      }
     }
+  } else {
+    const result = await supabase
+      .from("office_tasks")
+      .insert([taskData]);
 
-    setLoading(true);
+    error = result.error;
+  }
 
-    const taskData = {
-      task_name: form.task_name.trim(),
-      description: form.description.trim(),
-      assigned_to: form.assigned_to,
-      priority: form.priority,
-      status: form.status.trim() || "Pending",
-      start_date: form.start_date || null,
-      deadline: form.deadline || null,
-      total_quantity: Number(form.total_quantity) || 0,
-      completed_quantity: Number(form.completed_quantity) || 0,
-      notes: form.notes.trim(),
-    };
+  setLoading(false);
 
-    let error;
+  if (error) {
+    alert("Error: " + error.message);
+    return;
+  }
 
-    if (editingTask) {
-      const result = await supabase
-        .from("office_tasks")
-        .update(taskData)
-        .eq("id", editingTask.id);
-
-      error = result.error;
-
-if (!error) {
-  const { error: historyError } = await supabase.rpc(
-    "add_office_task_history",
-    {
-      p_task_id: editingTask.id,
-      p_previous_status: editingTask.status,
-      p_new_status: taskData.status,
-      p_completed_quantity: taskData.completed_quantity,
-      p_note: "Task edited",
-    }
+  alert(
+    editingTask
+      ? "Task Updated Successfully! ✅"
+      : "Task Added Successfully! ✅"
   );
 
-  if (historyError) {
-    alert(
-      "Task updated, but History save হয়নি: " +
-        historyError.message
-    );
-  }
+  setShowForm(false);
+  setEditingTask(null);
+  resetForm();
+  loadData();
 }
-
-        if (historyError) {
-          alert("Task updated, but History save হয়নি: " + historyError.message);
-        }
-      }
-    } else {
-      const result = await supabase
-        .from("office_tasks")
-        .insert([taskData]);
-
-      error = result.error;
-    }
-
-    setLoading(false);
-
-    if (error) {
-      alert("Error: " + error.message);
-      return;
-    }
-
-    alert(
-      editingTask
-        ? "Task Updated Successfully! ✅"
-        : "Task Added Successfully! ✅"
-    );
-
-    setShowForm(false);
-    setEditingTask(null);
-    resetForm();
-    loadData();
-  }
-
   async function updateTaskStatus(task: Task) {
     const newStatus = prompt("নতুন Status লিখুন:", task.status);
 
@@ -240,17 +234,16 @@ if (!error) {
       return;
     }
 
- const { error: historyError } = await supabase.rpc(
+const { error: historyError } = await supabase.rpc(
   "add_office_task_history",
   {
-    p_task_id: editingTask.id,
-    p_previous_status: editingTask.status,
-    p_new_status: taskData.status,
-    p_completed_quantity: taskData.completed_quantity,
-    p_note: "Task edited",
+    p_task_id: task.id,
+    p_previous_status: task.status,
+    p_new_status: newStatus.trim(),
+    p_completed_quantity: finalQty,
+    p_note: "Quick status update",
   }
 );
-
     if (historyError) {
       alert(
         "Status updated, but History save হয়নি: " +
