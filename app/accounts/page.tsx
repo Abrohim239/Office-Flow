@@ -113,35 +113,42 @@ export default function AccountsPage() {
     loadData();
   }, []);
 
-  async function addClient(e: React.FormEvent) {
-    e.preventDefault();
+async function addClient(e: React.FormEvent) {
+  e.preventDefault();
 
-    if (!clientForm.client_name.trim()) {
-      alert("Client Name দিন");
-      return;
-    }
-
-    const { error } = await supabase
-      .from("client_accounts")
-      .insert([clientForm]);
-
-    if (error) {
-      alert("Client Add Error: " + error.message);
-      return;
-    }
-
-    alert("Client Added Successfully! ✅");
-
-    setClientForm({
-      client_name: "",
-      phone: "",
-      address: "",
-      notes: "",
-    });
-
-    setShowClientForm(false);
-    loadData();
+  if (!clientForm.client_name.trim()) {
+    alert("Client Name দিন");
+    return;
   }
+
+  const { data, error } = await supabase.rpc("add_client_account", {
+    p_client_name: clientForm.client_name.trim(),
+    p_phone: clientForm.phone.trim(),
+    p_address: clientForm.address.trim(),
+    p_notes: clientForm.notes.trim() || null,
+  });
+
+  if (error) {
+    alert("Client Add Error: " + error.message);
+    return;
+  }
+
+  if (!data) {
+    alert("Client Save হয়নি।");
+    return;
+  }
+
+  alert("Client Added Successfully! 👤");
+
+  setClientForm({
+    client_name: "",
+    phone: "",
+    address: "",
+    notes: "",
+  });
+
+  loadData();
+}
 
   async function addBill(e: React.FormEvent) {
     e.preventDefault();
