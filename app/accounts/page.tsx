@@ -789,23 +789,23 @@ export default function AccountsPage() {
                 style={styles.input}
               />
 
-              <select
-                value={paymentForm.payment_method}
-                onChange={(e) =>
-                  setPaymentForm({
-                    ...paymentForm,
-                    payment_method: e.target.value,
-                  })
-                }
-                style={styles.input}
-              >
-                <option>Cash</option>
-                <option>Bank</option>
-                <option>bKash</option>
-                <option>Nagad</option>
-                <option>Other</option>
-              </select>
-
+            <select
+  value={paymentForm.payment_method}
+  onChange={(e) =>
+    setPaymentForm({
+      ...paymentForm,
+      payment_method: e.target.value,
+    })
+  }
+  style={styles.input}
+>
+  <option>Cash</option>
+  <option>Bank</option>
+  <option>LC Payment</option>
+  <option>bKash</option>
+  <option>Nagad</option>
+  <option>Other</option>
+</select>
               <input
                 placeholder="Note"
                 value={paymentForm.note}
