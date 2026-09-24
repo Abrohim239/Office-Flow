@@ -113,42 +113,42 @@ export default function AccountsPage() {
     loadData();
   }, []);
 
-async function addClient(e: React.FormEvent) {
-  e.preventDefault();
+  async function addClient(e: React.FormEvent) {
+    e.preventDefault();
 
-  if (!clientForm.client_name.trim()) {
-    alert("Client Name দিন");
-    return;
+    if (!clientForm.client_name.trim()) {
+      alert("Client Name দিন");
+      return;
+    }
+
+    const { data, error } = await supabase.rpc("add_client_account", {
+      p_client_name: clientForm.client_name.trim(),
+      p_phone: clientForm.phone.trim(),
+      p_address: clientForm.address.trim(),
+      p_notes: clientForm.notes.trim() || null,
+    });
+
+    if (error) {
+      alert("Client Add Error: " + error.message);
+      return;
+    }
+
+    if (!data) {
+      alert("Client Save হয়নি।");
+      return;
+    }
+
+    alert("Client Added Successfully! 👤");
+
+    setClientForm({
+      client_name: "",
+      phone: "",
+      address: "",
+      notes: "",
+    });
+
+    loadData();
   }
-
-  const { data, error } = await supabase.rpc("add_client_account", {
-    p_client_name: clientForm.client_name.trim(),
-    p_phone: clientForm.phone.trim(),
-    p_address: clientForm.address.trim(),
-    p_notes: clientForm.notes.trim() || null,
-  });
-
-  if (error) {
-    alert("Client Add Error: " + error.message);
-    return;
-  }
-
-  if (!data) {
-    alert("Client Save হয়নি।");
-    return;
-  }
-
-  alert("Client Added Successfully! 👤");
-
-  setClientForm({
-    client_name: "",
-    phone: "",
-    address: "",
-    notes: "",
-  });
-
-  loadData();
-}
 
   async function addBill(e: React.FormEvent) {
     e.preventDefault();
@@ -300,36 +300,99 @@ async function addClient(e: React.FormEvent) {
     );
   }
 
-  function getClientTotalBill(clientId: string) {
+  // =========================
+  // CLIENT CURRENCY CALCULATIONS
+  // =========================
+
+  function getClientCurrencyTotal(
+    clientId: string,
+    currency: string
+  ) {
     return bills
-      .filter((bill) => bill.client_id === clientId)
-      .filter((bill) => bill.currency === "BDT")
-      .reduce((sum, bill) => sum + Number(bill.bill_amount || 0), 0);
+      .filter(
+        (bill) =>
+          bill.client_id === clientId &&
+          bill.currency === currency
+      )
+      .reduce(
+        (sum, bill) =>
+          sum + Number(bill.bill_amount || 0),
+        0
+      );
   }
 
-  function getClientReceived(clientId: string) {
+  function getClientCurrencyReceived(
+    clientId: string,
+    currency: string
+  ) {
     return payments
-      .filter((payment) => payment.client_id === clientId)
-      .filter((payment) => payment.currency === "BDT")
-      .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+      .filter(
+        (payment) =>
+          payment.client_id === clientId &&
+          payment.currency === currency
+      )
+      .reduce(
+        (sum, payment) =>
+          sum + Number(payment.amount || 0),
+        0
+      );
   }
 
-  function getClientDue(clientId: string) {
+  function getClientCurrencyDue(
+    clientId: string,
+    currency: string
+  ) {
     return (
-      getClientTotalBill(clientId) -
-      getClientReceived(clientId)
+      getClientCurrencyTotal(clientId, currency) -
+      getClientCurrencyReceived(clientId, currency)
     );
   }
 
+  // =========================
+  // BDT SUMMARY
+  // =========================
+
   const totalBillBDT = bills
     .filter((bill) => bill.currency === "BDT")
-    .reduce((sum, bill) => sum + Number(bill.bill_amount || 0), 0);
+    .reduce(
+      (sum, bill) =>
+        sum + Number(bill.bill_amount || 0),
+      0
+    );
 
   const totalReceivedBDT = payments
     .filter((payment) => payment.currency === "BDT")
-    .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+    .reduce(
+      (sum, payment) =>
+        sum + Number(payment.amount || 0),
+      0
+    );
 
-  const totalDueBDT = totalBillBDT - totalReceivedBDT;
+  const totalDueBDT =
+    totalBillBDT - totalReceivedBDT;
+
+  // =========================
+  // USD SUMMARY
+  // =========================
+
+  const totalBillUSD = bills
+    .filter((bill) => bill.currency === "USD")
+    .reduce(
+      (sum, bill) =>
+        sum + Number(bill.bill_amount || 0),
+      0
+    );
+
+  const totalReceivedUSD = payments
+    .filter((payment) => payment.currency === "USD")
+    .reduce(
+      (sum, payment) =>
+        sum + Number(payment.amount || 0),
+      0
+    );
+
+  const totalDueUSD =
+    totalBillUSD - totalReceivedUSD;
 
   return (
     <main style={styles.page}>
@@ -339,74 +402,121 @@ async function addClient(e: React.FormEvent) {
         <div style={styles.header}>
           <div>
             <h1 style={styles.title}>💰 Client Accounts</h1>
+
             <p style={styles.subtitle}>
               Client Bill, Payment & Due Management
             </p>
           </div>
 
           <div style={styles.headerButtons}>
+
             <button
-              onClick={() => setShowClientForm(!showClientForm)}
+              onClick={() =>
+                setShowClientForm(!showClientForm)
+              }
               style={styles.primaryButton}
             >
               + Add Client
             </button>
 
             <button
-              onClick={() => setShowBillForm(!showBillForm)}
+              onClick={() =>
+                setShowBillForm(!showBillForm)
+              }
               style={styles.secondaryButton}
             >
               + Add Bill
             </button>
 
             <button
-              onClick={() => setShowPaymentForm(!showPaymentForm)}
+              onClick={() =>
+                setShowPaymentForm(!showPaymentForm)
+              }
               style={styles.successButton}
             >
               + Payment Received
             </button>
+
           </div>
         </div>
 
         {/* SUMMARY */}
         <div style={styles.summaryGrid}>
 
+          {/* TOTAL CLIENTS */}
           <div style={styles.card}>
             <div style={styles.cardIcon}>👥</div>
+
             <div>
-              <div style={styles.cardLabel}>Total Clients</div>
+              <div style={styles.cardLabel}>
+                Total Clients
+              </div>
+
               <div style={styles.cardValue}>
                 {clients.length}
               </div>
             </div>
           </div>
 
+          {/* TOTAL BILL */}
           <div style={styles.card}>
             <div style={styles.cardIcon}>🧾</div>
+
             <div>
-              <div style={styles.cardLabel}>Total Bill</div>
-              <div style={styles.cardValue}>
-                ৳{totalBillBDT.toLocaleString()}
+              <div style={styles.cardLabel}>
+                Total Bill
+              </div>
+
+              <div style={styles.currencySummary}>
+                <div>
+                  ৳{totalBillBDT.toLocaleString()}
+                </div>
+
+                <div>
+                  ${totalBillUSD.toLocaleString()}
+                </div>
               </div>
             </div>
           </div>
 
+          {/* TOTAL RECEIVED */}
           <div style={styles.card}>
             <div style={styles.cardIcon}>💰</div>
+
             <div>
-              <div style={styles.cardLabel}>Total Received</div>
-              <div style={styles.cardValue}>
-                ৳{totalReceivedBDT.toLocaleString()}
+              <div style={styles.cardLabel}>
+                Total Received
+              </div>
+
+              <div style={styles.currencySummary}>
+                <div>
+                  ৳{totalReceivedBDT.toLocaleString()}
+                </div>
+
+                <div>
+                  ${totalReceivedUSD.toLocaleString()}
+                </div>
               </div>
             </div>
           </div>
 
+          {/* TOTAL DUE */}
           <div style={styles.card}>
             <div style={styles.cardIcon}>⚠️</div>
+
             <div>
-              <div style={styles.cardLabel}>Total Due</div>
-              <div style={styles.dueValue}>
-                ৳{totalDueBDT.toLocaleString()}
+              <div style={styles.cardLabel}>
+                Total Due
+              </div>
+
+              <div style={styles.currencyDueSummary}>
+                <div>
+                  ৳{totalDueBDT.toLocaleString()}
+                </div>
+
+                <div>
+                  ${totalDueUSD.toLocaleString()}
+                </div>
               </div>
             </div>
           </div>
@@ -415,10 +525,16 @@ async function addClient(e: React.FormEvent) {
 
         {/* ADD CLIENT */}
         {showClientForm && (
-          <form onSubmit={addClient} style={styles.formCard}>
-            <h2 style={styles.formTitle}>Add New Client</h2>
+          <form
+            onSubmit={addClient}
+            style={styles.formCard}
+          >
+            <h2 style={styles.formTitle}>
+              Add New Client
+            </h2>
 
             <div style={styles.formGrid}>
+
               <input
                 placeholder="Client Name *"
                 value={clientForm.client_name}
@@ -466,9 +582,13 @@ async function addClient(e: React.FormEvent) {
                 }
                 style={styles.input}
               />
+
             </div>
 
-            <button type="submit" style={styles.primaryButton}>
+            <button
+              type="submit"
+              style={styles.primaryButton}
+            >
               Save Client
             </button>
           </form>
@@ -476,8 +596,13 @@ async function addClient(e: React.FormEvent) {
 
         {/* ADD BILL */}
         {showBillForm && (
-          <form onSubmit={addBill} style={styles.formCard}>
-            <h2 style={styles.formTitle}>🧾 Add Client Bill</h2>
+          <form
+            onSubmit={addBill}
+            style={styles.formCard}
+          >
+            <h2 style={styles.formTitle}>
+              🧾 Add Client Bill
+            </h2>
 
             <div style={styles.formGrid}>
 
@@ -491,10 +616,15 @@ async function addClient(e: React.FormEvent) {
                 }
                 style={styles.input}
               >
-                <option value="">-- Select Client --</option>
+                <option value="">
+                  -- Select Client --
+                </option>
 
                 {clients.map((client) => (
-                  <option key={client.id} value={client.id}>
+                  <option
+                    key={client.id}
+                    value={client.id}
+                  >
                     {client.client_name}
                   </option>
                 ))}
@@ -535,8 +665,13 @@ async function addClient(e: React.FormEvent) {
                 }
                 style={styles.input}
               >
-                <option value="BDT">BDT (৳)</option>
-                <option value="USD">USD ($)</option>
+                <option value="BDT">
+                  BDT (৳)
+                </option>
+
+                <option value="USD">
+                  USD ($)
+                </option>
               </select>
 
               <input
@@ -565,7 +700,10 @@ async function addClient(e: React.FormEvent) {
 
             </div>
 
-            <button type="submit" style={styles.secondaryButton}>
+            <button
+              type="submit"
+              style={styles.secondaryButton}
+            >
               Save Bill
             </button>
           </form>
@@ -573,7 +711,10 @@ async function addClient(e: React.FormEvent) {
 
         {/* PAYMENT */}
         {showPaymentForm && (
-          <form onSubmit={addPayment} style={styles.formCard}>
+          <form
+            onSubmit={addPayment}
+            style={styles.formCard}
+          >
             <h2 style={styles.formTitle}>
               💰 Add Payment Received
             </h2>
@@ -590,10 +731,15 @@ async function addClient(e: React.FormEvent) {
                 }
                 style={styles.input}
               >
-                <option value="">-- Select Client --</option>
+                <option value="">
+                  -- Select Client --
+                </option>
 
                 {clients.map((client) => (
-                  <option key={client.id} value={client.id}>
+                  <option
+                    key={client.id}
+                    value={client.id}
+                  >
                     {client.client_name}
                   </option>
                 ))}
@@ -622,8 +768,13 @@ async function addClient(e: React.FormEvent) {
                 }
                 style={styles.input}
               >
-                <option value="BDT">BDT (৳)</option>
-                <option value="USD">USD ($)</option>
+                <option value="BDT">
+                  BDT (৳)
+                </option>
+
+                <option value="USD">
+                  USD ($)
+                </option>
               </select>
 
               <input
@@ -669,7 +820,10 @@ async function addClient(e: React.FormEvent) {
 
             </div>
 
-            <button type="submit" style={styles.successButton}>
+            <button
+              type="submit"
+              style={styles.successButton}
+            >
               Save Payment
             </button>
           </form>
@@ -677,6 +831,7 @@ async function addClient(e: React.FormEvent) {
 
         {/* CLIENT LIST */}
         <section style={styles.section}>
+
           <h2 style={styles.sectionTitle}>
             👥 Client Accounts
           </h2>
@@ -689,77 +844,176 @@ async function addClient(e: React.FormEvent) {
             </p>
           ) : (
             <div style={styles.tableWrapper}>
+
               <table style={styles.table}>
+
                 <thead>
                   <tr>
-                    <th style={styles.th}>Client</th>
-                    <th style={styles.th}>Phone</th>
-                    <th style={styles.th}>Total Bill</th>
-                    <th style={styles.th}>Received</th>
-                    <th style={styles.th}>Due</th>
-                    <th style={styles.th}>Action</th>
+                    <th style={styles.th}>
+                      Client
+                    </th>
+
+                    <th style={styles.th}>
+                      Phone
+                    </th>
+
+                    <th style={styles.th}>
+                      Total Bill
+                    </th>
+
+                    <th style={styles.th}>
+                      Received
+                    </th>
+
+                    <th style={styles.th}>
+                      Due
+                    </th>
+
+                    <th style={styles.th}>
+                      Action
+                    </th>
                   </tr>
                 </thead>
 
                 <tbody>
+
                   {clients.map((client) => {
-                    const bill = getClientTotalBill(client.id);
-                    const received = getClientReceived(client.id);
-                    const due = getClientDue(client.id);
+
+                    const billBDT =
+                      getClientCurrencyTotal(
+                        client.id,
+                        "BDT"
+                      );
+
+                    const billUSD =
+                      getClientCurrencyTotal(
+                        client.id,
+                        "USD"
+                      );
+
+                    const receivedBDT =
+                      getClientCurrencyReceived(
+                        client.id,
+                        "BDT"
+                      );
+
+                    const receivedUSD =
+                      getClientCurrencyReceived(
+                        client.id,
+                        "USD"
+                      );
+
+                    const dueBDT =
+                      getClientCurrencyDue(
+                        client.id,
+                        "BDT"
+                      );
+
+                    const dueUSD =
+                      getClientCurrencyDue(
+                        client.id,
+                        "USD"
+                      );
 
                     return (
                       <tr key={client.id}>
+
                         <td style={styles.td}>
-                          <strong>{client.client_name}</strong>
+                          <strong>
+                            {client.client_name}
+                          </strong>
                         </td>
 
                         <td style={styles.td}>
                           {client.phone || "-"}
                         </td>
 
+                        {/* BILL */}
                         <td style={styles.td}>
-                          ৳{bill.toLocaleString()}
+                          <div>
+                            ৳{billBDT.toLocaleString()}
+                          </div>
+
+                          <div>
+                            ${billUSD.toLocaleString()}
+                          </div>
                         </td>
 
+                        {/* RECEIVED */}
                         <td style={styles.td}>
-                          <span style={styles.received}>
-                            ৳{received.toLocaleString()}
+                          <span
+                            style={styles.received}
+                          >
+                            <div>
+                              ৳
+                              {receivedBDT.toLocaleString()}
+                            </div>
+
+                            <div>
+                              $
+                              {receivedUSD.toLocaleString()}
+                            </div>
                           </span>
                         </td>
 
+                        {/* DUE */}
                         <td style={styles.td}>
+
                           <span
                             style={
-                              due > 0
+                              dueBDT > 0 ||
+                              dueUSD > 0
                                 ? styles.dueBadge
                                 : styles.paidBadge
                             }
                           >
-                            ৳{due.toLocaleString()}
+                            <div>
+                              ৳
+                              {dueBDT.toLocaleString()}
+                            </div>
+
+                            <div>
+                              $
+                              {dueUSD.toLocaleString()}
+                            </div>
                           </span>
+
                         </td>
 
+                        {/* DELETE */}
                         <td style={styles.td}>
+
                           <button
                             onClick={() =>
-                              deleteClient(client.id)
+                              deleteClient(
+                                client.id
+                              )
                             }
-                            style={styles.deleteButton}
+                            style={
+                              styles.deleteButton
+                            }
                           >
                             Delete
                           </button>
+
                         </td>
+
                       </tr>
                     );
                   })}
+
                 </tbody>
+
               </table>
+
             </div>
           )}
+
         </section>
 
         {/* BILL HISTORY */}
         <section style={styles.section}>
+
           <h2 style={styles.sectionTitle}>
             🧾 Bill History
           </h2>
@@ -770,26 +1024,48 @@ async function addClient(e: React.FormEvent) {
             </p>
           ) : (
             <div style={styles.tableWrapper}>
+
               <table style={styles.table}>
+
                 <thead>
                   <tr>
-                    <th style={styles.th}>Date</th>
-                    <th style={styles.th}>Client</th>
-                    <th style={styles.th}>Bill No.</th>
-                    <th style={styles.th}>Amount</th>
-                    <th style={styles.th}>Action</th>
+
+                    <th style={styles.th}>
+                      Date
+                    </th>
+
+                    <th style={styles.th}>
+                      Client
+                    </th>
+
+                    <th style={styles.th}>
+                      Bill No.
+                    </th>
+
+                    <th style={styles.th}>
+                      Amount
+                    </th>
+
+                    <th style={styles.th}>
+                      Action
+                    </th>
+
                   </tr>
                 </thead>
 
                 <tbody>
+
                   {bills.map((bill) => (
                     <tr key={bill.id}>
+
                       <td style={styles.td}>
                         {bill.bill_date}
                       </td>
 
                       <td style={styles.td}>
-                        {getClientName(bill.client_id)}
+                        {getClientName(
+                          bill.client_id
+                        )}
                       </td>
 
                       <td style={styles.td}>
@@ -797,32 +1073,49 @@ async function addClient(e: React.FormEvent) {
                       </td>
 
                       <td style={styles.td}>
-                        {bill.currency === "USD" ? "$" : "৳"}
+
+                        {bill.currency === "USD"
+                          ? "$"
+                          : "৳"}
+
                         {Number(
                           bill.bill_amount
                         ).toLocaleString()}
+
                       </td>
 
                       <td style={styles.td}>
+
                         <button
                           onClick={() =>
-                            deleteBill(bill.id)
+                            deleteBill(
+                              bill.id
+                            )
                           }
-                          style={styles.deleteButton}
+                          style={
+                            styles.deleteButton
+                          }
                         >
                           Delete
                         </button>
+
                       </td>
+
                     </tr>
                   ))}
+
                 </tbody>
+
               </table>
+
             </div>
           )}
+
         </section>
 
         {/* PAYMENT HISTORY */}
         <section style={styles.section}>
+
           <h2 style={styles.sectionTitle}>
             💰 Payment History
           </h2>
@@ -833,57 +1126,94 @@ async function addClient(e: React.FormEvent) {
             </p>
           ) : (
             <div style={styles.tableWrapper}>
+
               <table style={styles.table}>
+
                 <thead>
                   <tr>
-                    <th style={styles.th}>Date</th>
-                    <th style={styles.th}>Client</th>
-                    <th style={styles.th}>Amount</th>
-                    <th style={styles.th}>Method</th>
-                    <th style={styles.th}>Action</th>
+
+                    <th style={styles.th}>
+                      Date
+                    </th>
+
+                    <th style={styles.th}>
+                      Client
+                    </th>
+
+                    <th style={styles.th}>
+                      Amount
+                    </th>
+
+                    <th style={styles.th}>
+                      Method
+                    </th>
+
+                    <th style={styles.th}>
+                      Action
+                    </th>
+
                   </tr>
                 </thead>
 
                 <tbody>
+
                   {payments.map((payment) => (
                     <tr key={payment.id}>
+
                       <td style={styles.td}>
                         {payment.payment_date}
                       </td>
 
                       <td style={styles.td}>
-                        {getClientName(payment.client_id)}
+                        {getClientName(
+                          payment.client_id
+                        )}
                       </td>
 
                       <td style={styles.td}>
+
                         {payment.currency === "USD"
                           ? "$"
                           : "৳"}
+
                         {Number(
                           payment.amount
                         ).toLocaleString()}
+
                       </td>
 
                       <td style={styles.td}>
-                        {payment.payment_method || "-"}
+                        {payment.payment_method ||
+                          "-"}
                       </td>
 
                       <td style={styles.td}>
+
                         <button
                           onClick={() =>
-                            deletePayment(payment.id)
+                            deletePayment(
+                              payment.id
+                            )
                           }
-                          style={styles.deleteButton}
+                          style={
+                            styles.deleteButton
+                          }
                         >
                           Delete
                         </button>
+
                       </td>
+
                     </tr>
                   ))}
+
                 </tbody>
+
               </table>
+
             </div>
           )}
+
         </section>
 
       </div>
@@ -892,6 +1222,7 @@ async function addClient(e: React.FormEvent) {
 }
 
 const styles: Record<string, React.CSSProperties> = {
+
   page: {
     minHeight: "100vh",
     padding: "30px",
@@ -940,7 +1271,8 @@ const styles: Record<string, React.CSSProperties> = {
     background: "white",
     padding: "20px",
     borderRadius: "14px",
-    boxShadow: "0 4px 15px rgba(0,0,0,0.06)",
+    boxShadow:
+      "0 4px 15px rgba(0,0,0,0.06)",
     display: "flex",
     gap: "15px",
     alignItems: "center",
@@ -959,6 +1291,21 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: "24px",
     fontWeight: 700,
     marginTop: "4px",
+  },
+
+  currencySummary: {
+    fontSize: "21px",
+    fontWeight: 700,
+    lineHeight: 1.5,
+    marginTop: "4px",
+  },
+
+  currencyDueSummary: {
+    fontSize: "21px",
+    fontWeight: 700,
+    lineHeight: 1.5,
+    marginTop: "4px",
+    color: "#dc2626",
   },
 
   dueValue: {
@@ -1003,7 +1350,8 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "25px",
     borderRadius: "14px",
     marginBottom: "25px",
-    boxShadow: "0 4px 15px rgba(0,0,0,0.06)",
+    boxShadow:
+      "0 4px 15px rgba(0,0,0,0.06)",
   },
 
   formTitle: {
@@ -1034,7 +1382,8 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "25px",
     borderRadius: "14px",
     marginBottom: "25px",
-    boxShadow: "0 4px 15px rgba(0,0,0,0.06)",
+    boxShadow:
+      "0 4px 15px rgba(0,0,0,0.06)",
   },
 
   sectionTitle: {
