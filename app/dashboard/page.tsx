@@ -20,6 +20,8 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
 
   async function loadTasks() {
+    setLoading(true);
+
     const { data, error } = await supabase
       .from("office_tasks")
       .select(
@@ -41,77 +43,117 @@ export default function DashboardPage() {
     loadTasks();
   }, []);
 
-  const totalTasks = tasks.length;
-const completedTasks = tasks.filter((t) => {
-  const status = t.status.trim().toLowerCase();
-  const total = Number(t.total_quantity || 0);
-  const completed = Number(t.completed_quantity || 0);
+  // =========================
+  // STATUS HELPERS
+  // =========================
 
-  return (
-    status === "completed" ||
-    status === "complete" ||
-    (total > 0 && completed >= total)
+  function getStatus(task: Task) {
+    return (task.status || "Pending").trim().toLowerCase();
+  }
+
+  function isCompleted(task: Task) {
+    const status = getStatus(task);
+
+    const total = Number(task.total_quantity || 0);
+    const completed = Number(task.completed_quantity || 0);
+
+    return (
+      status === "completed" ||
+      status === "complete" ||
+      (total > 0 && completed >= total)
+    );
+  }
+
+  function isPending(task: Task) {
+    return getStatus(task) === "pending";
+  }
+
+  function isInProgress(task: Task) {
+    return !isPending(task) && !isCompleted(task);
+  }
+
+  // =========================
+  // TASK GROUPS
+  // =========================
+
+  const completedTaskList = tasks.filter((task) =>
+    isCompleted(task)
   );
-}).length;
 
-const pendingTasks = tasks.filter((t) => {
-  return t.status.trim().toLowerCase() === "pending";
-}).length;
+  const uncompletedTaskList = tasks.filter(
+    (task) => !isCompleted(task)
+  );
 
-const inProgressTasks = tasks.filter((t) => {
-  const status = t.status.trim().toLowerCase();
-  const total = Number(t.total_quantity || 0);
-  const completed = Number(t.completed_quantity || 0);
+  // =========================
+  // COUNTS
+  // =========================
 
-  const isCompleted =
-    status === "completed" ||
-    status === "complete" ||
-    (total > 0 && completed >= total);
+  const totalTasks = tasks.length;
 
-  return status !== "pending" && !isCompleted;
-}).length;
-const overdueTasks = tasks.filter((t) => {
-  if (!t.deadline) return false;
+  const completedTasks = completedTaskList.length;
 
-  const status = t.status.trim().toLowerCase();
-  const total = Number(t.total_quantity || 0);
-  const completed = Number(t.completed_quantity || 0);
+  const pendingTasks = tasks.filter((task) =>
+    isPending(task)
+  ).length;
 
-  const isCompleted =
-    status === "completed" ||
-    status === "complete" ||
-    (total > 0 && completed >= total);
+  const inProgressTasks = tasks.filter((task) =>
+    isInProgress(task)
+  ).length;
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  // =========================
+  // OVERDUE
+  // =========================
 
-  const deadline = new Date(t.deadline);
-  deadline.setHours(0, 0, 0, 0);
+  const overdueTasks = tasks.filter((task) => {
+    if (!task.deadline || isCompleted(task)) {
+      return false;
+    }
 
-  return deadline < today && !isCompleted;
-});
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const deadline = new Date(task.deadline);
+    deadline.setHours(0, 0, 0, 0);
+
+    return deadline < today;
+  });
+
+  // =========================
+  // QUANTITY
+  // =========================
+
   const totalQuantity = tasks.reduce(
-    (sum, t) => sum + Number(t.total_quantity || 0),
+    (sum, task) =>
+      sum + Number(task.total_quantity || 0),
     0
   );
 
   const completedQuantity = tasks.reduce(
-    (sum, t) => sum + Number(t.completed_quantity || 0),
+    (sum, task) =>
+      sum + Number(task.completed_quantity || 0),
     0
   );
 
   const progress =
     totalQuantity > 0
       ? Math.min(
-          Math.round((completedQuantity / totalQuantity) * 100),
+          Math.round(
+            (completedQuantity / totalQuantity) * 100
+          ),
           100
         )
       : 0;
 
+  // =========================
+  // EMPLOYEE REPORT
+  // =========================
+
   const employeeMap: Record<string, number> = {};
 
   tasks.forEach((task) => {
-    const employee = task.assigned_to || "Unassigned";
+    const employee =
+      task.assigned_to || "Unassigned";
+
     employeeMap[employee] =
       (employeeMap[employee] || 0) + 1;
   });
@@ -131,6 +173,7 @@ const overdueTasks = tasks.filter((t) => {
 
   return (
     <main style={pageStyle}>
+
       {/* HEADER */}
       <div style={headerStyle}>
         <div>
@@ -153,6 +196,7 @@ const overdueTasks = tasks.filter((t) => {
 
       {/* STAT CARDS */}
       <div style={gridStyle}>
+
         <StatCard
           title="Total Tasks"
           value={totalTasks}
@@ -179,7 +223,7 @@ const overdueTasks = tasks.filter((t) => {
 
         <StatCard
           title="Overdue"
-         value={overdueTasks.length}
+          value={overdueTasks.length}
           icon="⚠️"
         />
 
@@ -194,6 +238,7 @@ const overdueTasks = tasks.filter((t) => {
           value={completedQuantity}
           icon="✔️"
         />
+
       </div>
 
       {/* STATUS REPORT */}
@@ -222,7 +267,7 @@ const overdueTasks = tasks.filter((t) => {
 
         <ReportRow
           label="⚠️ Overdue"
-         value={overdueTasks.length}
+          value={overdueTasks.length}
           total={totalTasks}
         />
       </div>
@@ -254,19 +299,21 @@ const overdueTasks = tasks.filter((t) => {
           ⚠️ Overdue Tasks
         </h2>
 
-     {overdueTasks.length === 0 ? (
+        {overdueTasks.length === 0 ? (
           <div style={successBox}>
             ✅ কোনো Overdue Task নেই
           </div>
         ) : (
           <div>
-       {overdueTasks.map((task) => (
+            {overdueTasks.map((task) => (
               <div
                 key={task.id}
                 style={overdueRow}
               >
                 <div>
-                  <strong>{task.task_name}</strong>
+                  <strong>
+                    {task.task_name}
+                  </strong>
 
                   <div style={smallText}>
                     👤{" "}
@@ -316,50 +363,141 @@ const overdueTasks = tasks.filter((t) => {
         )}
       </div>
 
-      {/* RECENT TASKS */}
-      <div style={sectionStyle}>
-        <h2 style={sectionTitle}>
-          📝 Recent Tasks
-        </h2>
+      {/* =========================
+          UNCOMPLETED TASKS
+      ========================= */}
 
-        {tasks.length === 0 ? (
+      <div style={sectionStyle}>
+
+        <div style={sectionHeader}>
+          <h2 style={sectionTitle}>
+            🟠 Uncompleted Tasks
+          </h2>
+
+          <span style={uncompletedCountBadge}>
+            {uncompletedTaskList.length} Tasks
+          </span>
+        </div>
+
+        {uncompletedTaskList.length === 0 ? (
+          <div style={successBox}>
+            🎉 কোনো Uncompleted Task নেই
+          </div>
+        ) : (
+          <div>
+
+            {uncompletedTaskList.map((task) => (
+              <div
+                key={task.id}
+                style={uncompletedRow}
+              >
+
+                <div>
+                  <strong>
+                    {task.task_name}
+                  </strong>
+
+                  <div style={smallText}>
+                    👤{" "}
+                    {task.assigned_to ||
+                      "Unassigned"}
+                  </div>
+
+                  {task.deadline && (
+                    <div style={smallText}>
+                      📅 Deadline:{" "}
+                      {task.deadline}
+                    </div>
+                  )}
+                </div>
+
+                <div style={taskRight}>
+
+                  <div style={uncompletedStatus}>
+                    {task.status || "Pending"}
+                  </div>
+
+                  <div style={smallText}>
+                    📦{" "}
+                    {task.completed_quantity || 0}
+                    {" / "}
+                    {task.total_quantity || 0}
+                  </div>
+
+                </div>
+
+              </div>
+            ))}
+
+          </div>
+        )}
+
+      </div>
+
+      {/* =========================
+          COMPLETED TASKS
+      ========================= */}
+
+      <div style={sectionStyle}>
+
+        <div style={sectionHeader}>
+          <h2 style={sectionTitle}>
+            🟢 Completed Tasks
+          </h2>
+
+          <span style={completedCountBadge}>
+            {completedTaskList.length} Tasks
+          </span>
+        </div>
+
+        {completedTaskList.length === 0 ? (
           <p style={emptyStyle}>
-            এখনো কোনো office task নেই।
+            এখনো কোনো Completed Task নেই।
           </p>
         ) : (
-          tasks.slice(0, 10).map((task) => (
-            <div
-              key={task.id}
-              style={taskRow}
-            >
-              <div>
-                <strong>
-                  {task.task_name}
-                </strong>
+          <div>
 
-                <div style={smallText}>
-                  👤{" "}
-                  {task.assigned_to ||
-                    "Unassigned"}
+            {completedTaskList.map((task) => (
+              <div
+                key={task.id}
+                style={completedRow}
+              >
+
+                <div>
+                  <strong>
+                    {task.task_name}
+                  </strong>
+
+                  <div style={smallText}>
+                    👤{" "}
+                    {task.assigned_to ||
+                      "Unassigned"}
+                  </div>
                 </div>
+
+                <div style={taskRight}>
+
+                  <div style={completedStatus}>
+                    ✅ COMPLETED
+                  </div>
+
+                  <div style={smallText}>
+                    📦{" "}
+                    {task.completed_quantity || 0}
+                    {" / "}
+                    {task.total_quantity || 0}
+                  </div>
+
+                </div>
+
               </div>
+            ))}
 
-              <div style={taskRight}>
-                <div style={statusStyle}>
-                  {task.status}
-                </div>
-
-                <div style={smallText}>
-                  📦{" "}
-                  {task.completed_quantity || 0}
-                  {" / "}
-                  {task.total_quantity || 0}
-                </div>
-              </div>
-            </div>
-          ))
+          </div>
         )}
+
       </div>
+
     </main>
   );
 }
@@ -379,9 +517,13 @@ function StatCard({
 }) {
   return (
     <div style={cardStyle}>
-      <div style={iconStyle}>{icon}</div>
+
+      <div style={iconStyle}>
+        {icon}
+      </div>
 
       <div>
+
         <div style={cardTitle}>
           {title}
         </div>
@@ -389,7 +531,9 @@ function StatCard({
         <div style={cardValue}>
           {value}
         </div>
+
       </div>
+
     </div>
   );
 }
@@ -410,6 +554,7 @@ function ReportRow({
 
   return (
     <div style={reportRow}>
+
       <div style={reportTop}>
         <strong>{label}</strong>
 
@@ -426,6 +571,7 @@ function ReportRow({
           }}
         />
       </div>
+
     </div>
   );
 }
@@ -513,6 +659,13 @@ const sectionTitle = {
   marginTop: 0,
   marginBottom: "18px",
   fontSize: "20px",
+};
+
+const sectionHeader = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: "10px",
 };
 
 const reportRow = {
@@ -607,28 +760,68 @@ const employeeCount = {
   fontSize: "13px",
 };
 
-const taskRow = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  gap: "15px",
-  padding: "15px 0",
-  borderBottom: "1px solid #eee",
-};
-
 const taskRight = {
   textAlign: "right" as const,
-};
-
-const statusStyle = {
-  fontWeight: "600",
-  marginBottom: "5px",
 };
 
 const smallText = {
   fontSize: "13px",
   color: "#777",
   marginTop: "4px",
+};
+
+const uncompletedRow = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: "15px",
+  padding: "15px",
+  marginBottom: "10px",
+  border: "1px solid #eee",
+  borderRadius: "10px",
+  background: "#fffaf5",
+};
+
+const completedRow = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: "15px",
+  padding: "15px",
+  marginBottom: "10px",
+  border: "1px solid #eee",
+  borderRadius: "10px",
+  background: "#f6fff8",
+};
+
+const uncompletedStatus = {
+  color: "#b45309",
+  fontWeight: "700",
+  marginBottom: "5px",
+};
+
+const completedStatus = {
+  color: "#15803d",
+  fontWeight: "700",
+  marginBottom: "5px",
+};
+
+const uncompletedCountBadge = {
+  background: "#fff7ed",
+  color: "#c2410c",
+  padding: "6px 11px",
+  borderRadius: "20px",
+  fontSize: "13px",
+  fontWeight: "700",
+};
+
+const completedCountBadge = {
+  background: "#ecfdf5",
+  color: "#15803d",
+  padding: "6px 11px",
+  borderRadius: "20px",
+  fontSize: "13px",
+  fontWeight: "700",
 };
 
 const emptyStyle = {
