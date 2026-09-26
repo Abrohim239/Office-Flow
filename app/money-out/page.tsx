@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createClient } from "../../lib/supabase/client";
 
 const supabase = createClient();
@@ -17,51 +17,43 @@ type MoneyOut = {
 };
 
 const categories = [
-  {
-    key: "Supplier",
-    name: "Supplier",
-    icon: "📦",
-  },
-  {
-    key: "Worker",
-    name: "Worker",
-    icon: "👷",
-  },
-  {
-    key: "Salary",
-    name: "Salary",
-    icon: "👨‍💼",
-  },
-  {
-    key: "Transport",
-    name: "Transport",
-    icon: "🚚",
-  },
-  {
-    key: "Office",
-    name: "Office Expense",
-    icon: "🏢",
-  },
-  {
-    key: "Rent",
-    name: "Rent",
-    icon: "🏠",
-  },
-  {
-    key: "Utility",
-    name: "Utility",
-    icon: "💡",
-  },
-  {
-    key: "Other",
-    name: "Other",
-    icon: "📌",
-  },
+  ["Supplier", "📦", "Supplier"],
+  ["Worker", "👷", "Worker"],
+  ["Salary", "👨‍💼", "Salary"],
+  ["Transport", "🚚", "Transport"],
+  ["Office", "🏢", "Office Expense"],
+  ["Rent", "🏠", "Rent"],
+  ["Utility", "💡", "Utility"],
+  ["Other", "📌", "Other"],
 ];
+
+function monthKey(date: string) {
+  return date.slice(0, 7);
+}
+
+function monthLabel(key: string) {
+  const [year, month] = key.split("-");
+
+  return new Date(
+    Number(year),
+    Number(month) - 1,
+    1
+  ).toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+  });
+}
 
 export default function MoneyOutPage() {
   const [records, setRecords] = useState<MoneyOut[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const currentMonth = new Date()
+    .toISOString()
+    .slice(0, 7);
+
+  const [selectedMonth, setSelectedMonth] =
+    useState(currentMonth);
 
   const [form, setForm] = useState({
     paid_to: "",
@@ -99,6 +91,102 @@ export default function MoneyOutPage() {
     loadData();
   }, []);
 
+  // =========================
+  // AVAILABLE MONTHS
+  // =========================
+
+  const months = useMemo(() => {
+    const set = new Set<string>();
+
+    // Current month সবসময় থাকবে
+    set.add(currentMonth);
+
+    records.forEach((item) => {
+      if (item.payment_date) {
+        set.add(monthKey(item.payment_date));
+      }
+    });
+
+    return Array.from(set).sort().reverse();
+  }, [records, currentMonth]);
+
+  // =========================
+  // SELECTED MONTH DATA
+  // =========================
+
+  const selectedRecords = useMemo(() => {
+    return records.filter(
+      (item) =>
+        monthKey(item.payment_date) ===
+        selectedMonth
+    );
+  }, [records, selectedMonth]);
+
+  // =========================
+  // MONTHLY TOTAL
+  // =========================
+
+  const selectedBDT = selectedRecords
+    .filter((item) => item.currency === "BDT")
+    .reduce(
+      (sum, item) =>
+        sum + Number(item.amount || 0),
+      0
+    );
+
+  const selectedUSD = selectedRecords
+    .filter((item) => item.currency === "USD")
+    .reduce(
+      (sum, item) =>
+        sum + Number(item.amount || 0),
+      0
+    );
+
+  // =========================
+  // ALL TIME TOTAL
+  // =========================
+
+  const totalBDT = records
+    .filter((item) => item.currency === "BDT")
+    .reduce(
+      (sum, item) =>
+        sum + Number(item.amount || 0),
+      0
+    );
+
+  const totalUSD = records
+    .filter((item) => item.currency === "USD")
+    .reduce(
+      (sum, item) =>
+        sum + Number(item.amount || 0),
+      0
+    );
+
+  // =========================
+  // CATEGORY TOTAL
+  // =========================
+
+  function getCategoryTotal(
+    category: string,
+    currency: string
+  ) {
+    return selectedRecords
+      .filter(
+        (item) =>
+          item.category === category &&
+          item.currency === currency
+      )
+      .reduce(
+        (sum, item) =>
+          sum + Number(item.amount || 0),
+        0
+      );
+  }
+
+  // =========================
+  // ADD MONEY OUT
+  // =========================
+
   async function addMoneyOut(
     e: React.FormEvent
   ) {
@@ -125,8 +213,7 @@ export default function MoneyOutPage() {
           p_amount: Number(form.amount),
           p_currency: form.currency,
           p_category: form.category,
-          p_payment_date:
-            form.payment_date,
+          p_payment_date: form.payment_date,
           p_payment_method:
             form.payment_method,
           p_note:
@@ -166,9 +253,11 @@ export default function MoneyOutPage() {
     loadData();
   }
 
-  async function deleteRecord(
-    id: string
-  ) {
+  // =========================
+  // DELETE
+  // =========================
+
+  async function deleteRecord(id: string) {
     if (
       !confirm(
         "এই Expense Delete করতে চান?"
@@ -177,11 +266,10 @@ export default function MoneyOutPage() {
       return;
     }
 
-    const { error } =
-      await supabase
-        .from("money_out")
-        .delete()
-        .eq("id", id);
+    const { error } = await supabase
+      .from("money_out")
+      .delete()
+      .eq("id", id);
 
     if (error) {
       alert(
@@ -191,84 +279,34 @@ export default function MoneyOutPage() {
       return;
     }
 
-    alert(
-      "Expense Deleted! 🗑️"
-    );
+    alert("Expense Deleted! 🗑️");
 
     loadData();
-  }
-
-  // =========================
-  // TOTAL BDT
-  // =========================
-
-  const totalBDT = records
-    .filter(
-      (item) => item.currency === "BDT"
-    )
-    .reduce(
-      (sum, item) =>
-        sum +
-        Number(item.amount || 0),
-      0
-    );
-
-  // =========================
-  // TOTAL USD
-  // =========================
-
-  const totalUSD = records
-    .filter(
-      (item) => item.currency === "USD"
-    )
-    .reduce(
-      (sum, item) =>
-        sum +
-        Number(item.amount || 0),
-      0
-    );
-
-  // =========================
-  // CATEGORY TOTAL
-  // =========================
-
-  function getCategoryTotal(
-    category: string,
-    currency: string
-  ) {
-    return records
-      .filter(
-        (item) =>
-          item.category === category &&
-          item.currency === currency
-      )
-      .reduce(
-        (sum, item) =>
-          sum +
-          Number(item.amount || 0),
-        0
-      );
   }
 
   return (
     <main style={styles.page}>
       <div style={styles.container}>
 
-        {/* HEADER */}
-        <div style={styles.header}>
-          <div>
-            <h1 style={styles.title}>
-              💸 Money Out
-            </h1>
+        {/* =========================
+            HEADER
+        ========================= */}
 
-            <p style={styles.subtitle}>
-              Office Expense & Payment
-              Management
-            </p>
-          </div>
+        <div style={styles.header}>
+          <h1 style={styles.title}>
+            💸 Money Out
+          </h1>
+
+          <p style={styles.subtitle}>
+            Office Expense & Payment
+            Management
+          </p>
         </div>
 
-        {/* MAIN SUMMARY */}
+        {/* =========================
+            ALL TIME SUMMARY
+        ========================= */}
+
         <div style={styles.summaryGrid}>
 
           <div style={styles.card}>
@@ -324,24 +362,29 @@ export default function MoneyOutPage() {
         </div>
 
         {/* =========================
-            CATEGORY SUMMARY
+            MONTHLY EXPENSE DASHBOARD
         ========================= */}
 
         <section
-          style={styles.categorySection}
+          style={
+            styles.categorySection
+          }
         >
+
           <div
             style={
-              styles.categoryHeader
+              styles.categoryTop
             }
           >
+
             <div>
               <h2
                 style={
                   styles.categoryTitle
                 }
               >
-                📊 Expense by Category
+                📊 Monthly Expense by
+                Category
               </h2>
 
               <p
@@ -349,57 +392,148 @@ export default function MoneyOutPage() {
                   styles.categorySubtitle
                 }
               >
-                কোন খাতে কত টাকা খরচ হয়েছে
-                এক নজরে দেখুন
+                Entry Date অনুযায়ী
+                নির্বাচিত মাসের খরচ
+                দেখাচ্ছে
               </p>
             </div>
+
+            {/* MONTH SELECT */}
+
+            <select
+              value={selectedMonth}
+              onChange={(e) =>
+                setSelectedMonth(
+                  e.target.value
+                )
+              }
+              style={
+                styles.monthSelect
+              }
+            >
+
+              {months.map((month) => (
+                <option
+                  key={month}
+                  value={month}
+                >
+                  {monthLabel(month)}
+                </option>
+              ))}
+
+            </select>
+
           </div>
+
+          {/* SELECTED MONTH TOTAL */}
+
+          <div
+            style={
+              styles.monthTotalRow
+            }
+          >
+
+            <div
+              style={
+                styles.monthTotalCard
+              }
+            >
+              <span>
+                💰 {monthLabel(
+                  selectedMonth
+                )} BDT
+              </span>
+
+              <strong>
+                ৳
+                {selectedBDT.toLocaleString()}
+              </strong>
+            </div>
+
+            <div
+              style={
+                styles.monthTotalCard
+              }
+            >
+              <span>
+                💵 {monthLabel(
+                  selectedMonth
+                )} USD
+              </span>
+
+              <strong>
+                $
+                {selectedUSD.toLocaleString()}
+              </strong>
+            </div>
+
+            <div
+              style={
+                styles.monthTotalCard
+              }
+            >
+              <span>
+                🧾 Monthly Entries
+              </span>
+
+              <strong>
+                {selectedRecords.length}
+              </strong>
+            </div>
+
+          </div>
+
+          {/* CATEGORY CARDS */}
 
           <div
             style={
               styles.categoryGrid
             }
           >
+
             {categories.map(
-              (category) => {
+              ([
+                key,
+                icon,
+                name,
+              ]) => {
+
                 const bdt =
                   getCategoryTotal(
-                    category.key,
+                    key,
                     "BDT"
                   );
 
                 const usd =
                   getCategoryTotal(
-                    category.key,
+                    key,
                     "USD"
                   );
 
                 return (
                   <div
-                    key={category.key}
+                    key={key}
                     style={
                       styles.categoryCard
                     }
                   >
+
                     <div
                       style={
                         styles.categoryIcon
                       }
                     >
-                      {category.icon}
+                      {icon}
                     </div>
 
-                    <div
-                      style={
-                        styles.categoryInfo
-                      }
-                    >
+                    <div>
+
                       <div
                         style={
                           styles.categoryName
                         }
                       >
-                        {category.name}
+                        {name}
                       </div>
 
                       <div
@@ -421,21 +555,30 @@ export default function MoneyOutPage() {
                           {usd.toLocaleString()}
                         </div>
                       )}
+
                     </div>
+
                   </div>
                 );
               }
             )}
+
           </div>
+
         </section>
 
-        {/* ADD FORM */}
+        {/* =========================
+            ADD MONEY OUT
+        ========================= */}
+
         <form
           onSubmit={addMoneyOut}
           style={styles.formCard}
         >
 
-          <h2 style={styles.formTitle}>
+          <h2
+            style={styles.formTitle}
+          >
             ➕ Add Money Out
           </h2>
 
@@ -470,7 +613,6 @@ export default function MoneyOutPage() {
               style={styles.input}
             />
 
-            {/* CURRENCY */}
             <select
               value={form.currency}
               onChange={(e) =>
@@ -482,6 +624,7 @@ export default function MoneyOutPage() {
               }
               style={styles.input}
             >
+
               <option value="BDT">
                 BDT (৳)
               </option>
@@ -489,9 +632,9 @@ export default function MoneyOutPage() {
               <option value="USD">
                 USD ($)
               </option>
+
             </select>
 
-            {/* CATEGORY */}
             <select
               value={form.category}
               onChange={(e) =>
@@ -503,40 +646,24 @@ export default function MoneyOutPage() {
               }
               style={styles.input}
             >
-              <option value="Supplier">
-                Supplier
-              </option>
 
-              <option value="Worker">
-                Worker
-              </option>
+              {categories.map(
+                ([
+                  key,
+                  ,
+                  name,
+                ]) => (
+                  <option
+                    key={key}
+                    value={key}
+                  >
+                    {name}
+                  </option>
+                )
+              )}
 
-              <option value="Salary">
-                Salary
-              </option>
-
-              <option value="Transport">
-                Transport
-              </option>
-
-              <option value="Office">
-                Office Expense
-              </option>
-
-              <option value="Rent">
-                Rent
-              </option>
-
-              <option value="Utility">
-                Utility
-              </option>
-
-              <option value="Other">
-                Other
-              </option>
             </select>
 
-            {/* DATE */}
             <input
               type="date"
               value={
@@ -552,7 +679,6 @@ export default function MoneyOutPage() {
               style={styles.input}
             />
 
-            {/* PAYMENT METHOD */}
             <select
               value={
                 form.payment_method
@@ -566,32 +692,33 @@ export default function MoneyOutPage() {
               }
               style={styles.input}
             >
-              <option value="Cash">
+
+              <option>
                 Cash
               </option>
 
-              <option value="Bank">
+              <option>
                 Bank
               </option>
 
-              <option value="bKash">
+              <option>
                 bKash
               </option>
 
-              <option value="Nagad">
+              <option>
                 Nagad
               </option>
 
-              <option value="Card">
+              <option>
                 Card
               </option>
 
-              <option value="Other">
+              <option>
                 Other
               </option>
+
             </select>
 
-            {/* NOTE */}
             <input
               placeholder="Note"
               value={form.note}
@@ -616,7 +743,10 @@ export default function MoneyOutPage() {
 
         </form>
 
-        {/* HISTORY */}
+        {/* =========================
+            MONEY OUT HISTORY
+        ========================= */}
+
         <section
           style={styles.section}
         >
@@ -630,27 +760,33 @@ export default function MoneyOutPage() {
           </h2>
 
           {loading ? (
-            <p>Loading...</p>
+            <p>
+              Loading...
+            </p>
           ) : records.length ===
             0 ? (
             <p
               style={styles.empty}
             >
-              এখনো কোনো Expense Entry
-              নেই।
+              এখনো কোনো Expense
+              Entry নেই।
             </p>
           ) : (
+
             <div
               style={
                 styles.tableWrapper
               }
             >
+
               <table
                 style={styles.table}
               >
 
                 <thead>
+
                   <tr>
+
                     <th
                       style={styles.th}
                     >
@@ -692,10 +828,13 @@ export default function MoneyOutPage() {
                     >
                       Action
                     </th>
+
                   </tr>
+
                 </thead>
 
                 <tbody>
+
                   {records.map(
                     (item) => (
                       <tr
@@ -778,6 +917,7 @@ export default function MoneyOutPage() {
                             styles.td
                           }
                         >
+
                           <button
                             onClick={() =>
                               deleteRecord(
@@ -790,14 +930,17 @@ export default function MoneyOutPage() {
                           >
                             Delete
                           </button>
+
                         </td>
 
                       </tr>
                     )
                   )}
+
                 </tbody>
 
               </table>
+
             </div>
           )}
 
@@ -812,10 +955,12 @@ const styles: Record<
   string,
   React.CSSProperties
 > = {
+
   page: {
     minHeight: "100vh",
     padding: "30px",
-    background: "#f5f7fb",
+    background:
+      "#f5f7fb",
   },
 
   container: {
@@ -836,8 +981,6 @@ const styles: Record<
     marginTop: "6px",
     color: "#666",
   },
-
-  /* MAIN SUMMARY */
 
   summaryGrid: {
     display: "grid",
@@ -873,8 +1016,6 @@ const styles: Record<
     marginTop: "5px",
   },
 
-  /* CATEGORY */
-
   categorySection: {
     background: "white",
     padding: "25px",
@@ -884,7 +1025,13 @@ const styles: Record<
       "0 4px 15px rgba(0,0,0,0.06)",
   },
 
-  categoryHeader: {
+  categoryTop: {
+    display: "flex",
+    justifyContent:
+      "space-between",
+    alignItems: "center",
+    gap: "15px",
+    flexWrap: "wrap",
     marginBottom: "18px",
   },
 
@@ -900,6 +1047,36 @@ const styles: Record<
     fontSize: "14px",
   },
 
+  monthSelect: {
+    padding: "11px 14px",
+    border:
+      "1px solid #d1d5db",
+    borderRadius: "8px",
+    background: "white",
+    fontSize: "14px",
+    minWidth: "190px",
+  },
+
+  monthTotalRow: {
+    display: "grid",
+    gridTemplateColumns:
+      "repeat(auto-fit, minmax(220px, 1fr))",
+    gap: "12px",
+    marginBottom: "15px",
+  },
+
+  monthTotalCard: {
+    background: "#f8fafc",
+    border:
+      "1px solid #e5e7eb",
+    borderRadius: "10px",
+    padding: "14px",
+    display: "flex",
+    justifyContent:
+      "space-between",
+    gap: "10px",
+  },
+
   categoryGrid: {
     display: "grid",
     gridTemplateColumns:
@@ -909,7 +1086,8 @@ const styles: Record<
 
   categoryCard: {
     background: "#f8fafc",
-    border: "1px solid #e5e7eb",
+    border:
+      "1px solid #e5e7eb",
     borderRadius: "12px",
     padding: "16px",
     display: "flex",
@@ -919,10 +1097,6 @@ const styles: Record<
 
   categoryIcon: {
     fontSize: "28px",
-  },
-
-  categoryInfo: {
-    minWidth: 0,
   },
 
   categoryName: {
@@ -942,8 +1116,6 @@ const styles: Record<
     fontWeight: 600,
     marginTop: "3px",
   },
-
-  /* FORM */
 
   formCard: {
     background: "white",
@@ -971,7 +1143,8 @@ const styles: Record<
     width: "100%",
     boxSizing: "border-box",
     padding: "12px",
-    border: "1px solid #d1d5db",
+    border:
+      "1px solid #d1d5db",
     borderRadius: "8px",
     fontSize: "14px",
     background: "white",
@@ -981,13 +1154,12 @@ const styles: Record<
     border: "none",
     background: "#dc2626",
     color: "white",
-    padding: "12px 18px",
+    padding:
+      "12px 18px",
     borderRadius: "8px",
     cursor: "pointer",
     fontWeight: 600,
   },
-
-  /* HISTORY */
 
   section: {
     background: "white",
@@ -1008,7 +1180,8 @@ const styles: Record<
 
   table: {
     width: "100%",
-    borderCollapse: "collapse",
+    borderCollapse:
+      "collapse",
     minWidth: "900px",
   },
 
@@ -1016,19 +1189,22 @@ const styles: Record<
     textAlign: "left",
     padding: "12px",
     background: "#f3f4f6",
-    borderBottom: "1px solid #ddd",
+    borderBottom:
+      "1px solid #ddd",
   },
 
   td: {
     padding: "12px",
-    borderBottom: "1px solid #eee",
+    borderBottom:
+      "1px solid #eee",
   },
 
   deleteButton: {
     border: "none",
     background: "#fee2e2",
     color: "#dc2626",
-    padding: "7px 10px",
+    padding:
+      "7px 10px",
     borderRadius: "6px",
     cursor: "pointer",
   },
