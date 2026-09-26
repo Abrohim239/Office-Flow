@@ -16,6 +16,49 @@ type MoneyOut = {
   note: string | null;
 };
 
+const categories = [
+  {
+    key: "Supplier",
+    name: "Supplier",
+    icon: "📦",
+  },
+  {
+    key: "Worker",
+    name: "Worker",
+    icon: "👷",
+  },
+  {
+    key: "Salary",
+    name: "Salary",
+    icon: "👨‍💼",
+  },
+  {
+    key: "Transport",
+    name: "Transport",
+    icon: "🚚",
+  },
+  {
+    key: "Office",
+    name: "Office Expense",
+    icon: "🏢",
+  },
+  {
+    key: "Rent",
+    name: "Rent",
+    icon: "🏠",
+  },
+  {
+    key: "Utility",
+    name: "Utility",
+    icon: "💡",
+  },
+  {
+    key: "Other",
+    name: "Other",
+    icon: "📌",
+  },
+];
+
 export default function MoneyOutPage() {
   const [records, setRecords] = useState<MoneyOut[]>([]);
   const [loading, setLoading] = useState(true);
@@ -25,7 +68,9 @@ export default function MoneyOutPage() {
     amount: "",
     currency: "BDT",
     category: "Other",
-    payment_date: new Date().toISOString().split("T")[0],
+    payment_date: new Date()
+      .toISOString()
+      .split("T")[0],
     payment_method: "Cash",
     note: "",
   });
@@ -36,7 +81,9 @@ export default function MoneyOutPage() {
     const { data, error } = await supabase
       .from("money_out")
       .select("*")
-      .order("payment_date", { ascending: false });
+      .order("payment_date", {
+        ascending: false,
+      });
 
     if (error) {
       alert("Load Error: " + error.message);
@@ -52,80 +99,156 @@ export default function MoneyOutPage() {
     loadData();
   }, []);
 
-async function addMoneyOut(e: React.FormEvent) {
-  e.preventDefault();
+  async function addMoneyOut(
+    e: React.FormEvent
+  ) {
+    e.preventDefault();
 
-  if (!form.paid_to.trim()) {
-    alert("Paid To দিন");
-    return;
-  }
-
-  if (!form.amount || Number(form.amount) <= 0) {
-    alert("Amount দিন");
-    return;
-  }
-
-  const { data, error } = await supabase.rpc(
-    "add_money_out",
-    {
-      p_paid_to: form.paid_to.trim(),
-      p_amount: Number(form.amount),
-      p_currency: form.currency,
-      p_category: form.category,
-      p_payment_date: form.payment_date,
-      p_payment_method: form.payment_method,
-      p_note: form.note.trim() || null,
-    }
-  );
-
-  if (error) {
-    alert("Money Out Error: " + error.message);
-    return;
-  }
-
-  if (!data) {
-    alert("Money Out Save হয়নি।");
-    return;
-  }
-
-  alert("Money Out Added Successfully! 💸");
-
-  setForm({
-    paid_to: "",
-    amount: "",
-    currency: "BDT",
-    category: "Other",
-    payment_date: new Date().toISOString().split("T")[0],
-    payment_method: "Cash",
-    note: "",
-  });
-
-  loadData();
-}
-  async function deleteRecord(id: string) {
-    if (!confirm("এই Expense Delete করতে চান?")) return;
-
-    const { error } = await supabase
-      .from("money_out")
-      .delete()
-      .eq("id", id);
-
-    if (error) {
-      alert("Delete Error: " + error.message);
+    if (!form.paid_to.trim()) {
+      alert("Paid To দিন");
       return;
     }
 
-    alert("Expense Deleted! 🗑️");
+    if (
+      !form.amount ||
+      Number(form.amount) <= 0
+    ) {
+      alert("Amount দিন");
+      return;
+    }
+
+    const { data, error } =
+      await supabase.rpc(
+        "add_money_out",
+        {
+          p_paid_to: form.paid_to.trim(),
+          p_amount: Number(form.amount),
+          p_currency: form.currency,
+          p_category: form.category,
+          p_payment_date:
+            form.payment_date,
+          p_payment_method:
+            form.payment_method,
+          p_note:
+            form.note.trim() || null,
+        }
+      );
+
+    if (error) {
+      alert(
+        "Money Out Error: " +
+          error.message
+      );
+      return;
+    }
+
+    if (!data) {
+      alert("Money Out Save হয়নি।");
+      return;
+    }
+
+    alert(
+      "Money Out Added Successfully! 💸"
+    );
+
+    setForm({
+      paid_to: "",
+      amount: "",
+      currency: "BDT",
+      category: "Other",
+      payment_date: new Date()
+        .toISOString()
+        .split("T")[0],
+      payment_method: "Cash",
+      note: "",
+    });
+
     loadData();
   }
 
+  async function deleteRecord(
+    id: string
+  ) {
+    if (
+      !confirm(
+        "এই Expense Delete করতে চান?"
+      )
+    ) {
+      return;
+    }
+
+    const { error } =
+      await supabase
+        .from("money_out")
+        .delete()
+        .eq("id", id);
+
+    if (error) {
+      alert(
+        "Delete Error: " +
+          error.message
+      );
+      return;
+    }
+
+    alert(
+      "Expense Deleted! 🗑️"
+    );
+
+    loadData();
+  }
+
+  // =========================
+  // TOTAL BDT
+  // =========================
+
   const totalBDT = records
-    .filter((item) => item.currency === "BDT")
-    .reduce((sum, item) => sum + Number(item.amount || 0), 0);
+    .filter(
+      (item) => item.currency === "BDT"
+    )
+    .reduce(
+      (sum, item) =>
+        sum +
+        Number(item.amount || 0),
+      0
+    );
+
+  // =========================
+  // TOTAL USD
+  // =========================
 
   const totalUSD = records
-    .filter((item) => item.currency === "USD")
-    .reduce((sum, item) => sum + Number(item.amount || 0), 0);
+    .filter(
+      (item) => item.currency === "USD"
+    )
+    .reduce(
+      (sum, item) =>
+        sum +
+        Number(item.amount || 0),
+      0
+    );
+
+  // =========================
+  // CATEGORY TOTAL
+  // =========================
+
+  function getCategoryTotal(
+    category: string,
+    currency: string
+  ) {
+    return records
+      .filter(
+        (item) =>
+          item.category === category &&
+          item.currency === currency
+      )
+      .reduce(
+        (sum, item) =>
+          sum +
+          Number(item.amount || 0),
+        0
+      );
+  }
 
   return (
     <main style={styles.page}>
@@ -134,40 +257,64 @@ async function addMoneyOut(e: React.FormEvent) {
         {/* HEADER */}
         <div style={styles.header}>
           <div>
-            <h1 style={styles.title}>💸 Money Out</h1>
+            <h1 style={styles.title}>
+              💸 Money Out
+            </h1>
+
             <p style={styles.subtitle}>
-              Office Expense & Payment Management
+              Office Expense & Payment
+              Management
             </p>
           </div>
         </div>
 
-        {/* SUMMARY */}
+        {/* MAIN SUMMARY */}
         <div style={styles.summaryGrid}>
 
           <div style={styles.card}>
-            <div style={styles.icon}>💸</div>
+            <div style={styles.icon}>
+              💸
+            </div>
+
             <div>
-              <div style={styles.label}>Total Money Out</div>
+              <div style={styles.label}>
+                Total Money Out
+              </div>
+
               <div style={styles.value}>
-                ৳{totalBDT.toLocaleString()}
+                ৳
+                {totalBDT.toLocaleString()}
               </div>
             </div>
           </div>
 
           <div style={styles.card}>
-            <div style={styles.icon}>💵</div>
+            <div style={styles.icon}>
+              💵
+            </div>
+
             <div>
-              <div style={styles.label}>USD Out</div>
+              <div style={styles.label}>
+                USD Out
+              </div>
+
               <div style={styles.value}>
-                ${totalUSD.toLocaleString()}
+                $
+                {totalUSD.toLocaleString()}
               </div>
             </div>
           </div>
 
           <div style={styles.card}>
-            <div style={styles.icon}>🧾</div>
+            <div style={styles.icon}>
+              🧾
+            </div>
+
             <div>
-              <div style={styles.label}>Total Entries</div>
+              <div style={styles.label}>
+                Total Entries
+              </div>
+
               <div style={styles.value}>
                 {records.length}
               </div>
@@ -176,14 +323,125 @@ async function addMoneyOut(e: React.FormEvent) {
 
         </div>
 
+        {/* =========================
+            CATEGORY SUMMARY
+        ========================= */}
+
+        <section
+          style={styles.categorySection}
+        >
+          <div
+            style={
+              styles.categoryHeader
+            }
+          >
+            <div>
+              <h2
+                style={
+                  styles.categoryTitle
+                }
+              >
+                📊 Expense by Category
+              </h2>
+
+              <p
+                style={
+                  styles.categorySubtitle
+                }
+              >
+                কোন খাতে কত টাকা খরচ হয়েছে
+                এক নজরে দেখুন
+              </p>
+            </div>
+          </div>
+
+          <div
+            style={
+              styles.categoryGrid
+            }
+          >
+            {categories.map(
+              (category) => {
+                const bdt =
+                  getCategoryTotal(
+                    category.key,
+                    "BDT"
+                  );
+
+                const usd =
+                  getCategoryTotal(
+                    category.key,
+                    "USD"
+                  );
+
+                return (
+                  <div
+                    key={category.key}
+                    style={
+                      styles.categoryCard
+                    }
+                  >
+                    <div
+                      style={
+                        styles.categoryIcon
+                      }
+                    >
+                      {category.icon}
+                    </div>
+
+                    <div
+                      style={
+                        styles.categoryInfo
+                      }
+                    >
+                      <div
+                        style={
+                          styles.categoryName
+                        }
+                      >
+                        {category.name}
+                      </div>
+
+                      <div
+                        style={
+                          styles.categoryBDT
+                        }
+                      >
+                        ৳
+                        {bdt.toLocaleString()}
+                      </div>
+
+                      {usd > 0 && (
+                        <div
+                          style={
+                            styles.categoryUSD
+                          }
+                        >
+                          $
+                          {usd.toLocaleString()}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              }
+            )}
+          </div>
+        </section>
+
         {/* ADD FORM */}
-        <form onSubmit={addMoneyOut} style={styles.formCard}>
+        <form
+          onSubmit={addMoneyOut}
+          style={styles.formCard}
+        >
 
           <h2 style={styles.formTitle}>
             ➕ Add Money Out
           </h2>
 
-          <div style={styles.formGrid}>
+          <div
+            style={styles.formGrid}
+          >
 
             <input
               placeholder="Paid To *"
@@ -191,7 +449,8 @@ async function addMoneyOut(e: React.FormEvent) {
               onChange={(e) =>
                 setForm({
                   ...form,
-                  paid_to: e.target.value,
+                  paid_to:
+                    e.target.value,
                 })
               }
               style={styles.input}
@@ -204,83 +463,143 @@ async function addMoneyOut(e: React.FormEvent) {
               onChange={(e) =>
                 setForm({
                   ...form,
-                  amount: e.target.value,
+                  amount:
+                    e.target.value,
                 })
               }
               style={styles.input}
             />
 
+            {/* CURRENCY */}
             <select
               value={form.currency}
               onChange={(e) =>
                 setForm({
                   ...form,
-                  currency: e.target.value,
+                  currency:
+                    e.target.value,
                 })
               }
               style={styles.input}
             >
-              <option value="BDT">BDT (৳)</option>
-              <option value="USD">USD ($)</option>
+              <option value="BDT">
+                BDT (৳)
+              </option>
+
+              <option value="USD">
+                USD ($)
+              </option>
             </select>
 
+            {/* CATEGORY */}
             <select
               value={form.category}
               onChange={(e) =>
                 setForm({
                   ...form,
-                  category: e.target.value,
+                  category:
+                    e.target.value,
                 })
               }
               style={styles.input}
             >
-              <option value="Supplier">Supplier</option>
-              <option value="Worker">Worker</option>
-              <option value="Salary">Salary</option>
-              <option value="Transport">Transport</option>
-              <option value="Office">Office Expense</option>
-              <option value="Rent">Rent</option>
-              <option value="Utility">Utility</option>
-              <option value="Other">Other</option>
+              <option value="Supplier">
+                Supplier
+              </option>
+
+              <option value="Worker">
+                Worker
+              </option>
+
+              <option value="Salary">
+                Salary
+              </option>
+
+              <option value="Transport">
+                Transport
+              </option>
+
+              <option value="Office">
+                Office Expense
+              </option>
+
+              <option value="Rent">
+                Rent
+              </option>
+
+              <option value="Utility">
+                Utility
+              </option>
+
+              <option value="Other">
+                Other
+              </option>
             </select>
 
+            {/* DATE */}
             <input
               type="date"
-              value={form.payment_date}
+              value={
+                form.payment_date
+              }
               onChange={(e) =>
                 setForm({
                   ...form,
-                  payment_date: e.target.value,
+                  payment_date:
+                    e.target.value,
                 })
               }
               style={styles.input}
             />
 
+            {/* PAYMENT METHOD */}
             <select
-              value={form.payment_method}
+              value={
+                form.payment_method
+              }
               onChange={(e) =>
                 setForm({
                   ...form,
-                  payment_method: e.target.value,
+                  payment_method:
+                    e.target.value,
                 })
               }
               style={styles.input}
             >
-              <option value="Cash">Cash</option>
-              <option value="Bank">Bank</option>
-              <option value="bKash">bKash</option>
-              <option value="Nagad">Nagad</option>
-              <option value="Card">Card</option>
-              <option value="Other">Other</option>
+              <option value="Cash">
+                Cash
+              </option>
+
+              <option value="Bank">
+                Bank
+              </option>
+
+              <option value="bKash">
+                bKash
+              </option>
+
+              <option value="Nagad">
+                Nagad
+              </option>
+
+              <option value="Card">
+                Card
+              </option>
+
+              <option value="Other">
+                Other
+              </option>
             </select>
 
+            {/* NOTE */}
             <input
               placeholder="Note"
               value={form.note}
               onChange={(e) =>
                 setForm({
                   ...form,
-                  note: e.target.value,
+                  note:
+                    e.target.value,
                 })
               }
               style={styles.input}
@@ -288,89 +607,194 @@ async function addMoneyOut(e: React.FormEvent) {
 
           </div>
 
-          <button type="submit" style={styles.button}>
+          <button
+            type="submit"
+            style={styles.button}
+          >
             💸 Save Money Out
           </button>
 
         </form>
 
         {/* HISTORY */}
-        <section style={styles.section}>
+        <section
+          style={styles.section}
+        >
 
-          <h2 style={styles.sectionTitle}>
+          <h2
+            style={
+              styles.sectionTitle
+            }
+          >
             📋 Money Out History
           </h2>
 
           {loading ? (
             <p>Loading...</p>
-          ) : records.length === 0 ? (
-            <p style={styles.empty}>
-              এখনো কোনো Expense Entry নেই।
+          ) : records.length ===
+            0 ? (
+            <p
+              style={styles.empty}
+            >
+              এখনো কোনো Expense Entry
+              নেই।
             </p>
           ) : (
-            <div style={styles.tableWrapper}>
-              <table style={styles.table}>
+            <div
+              style={
+                styles.tableWrapper
+              }
+            >
+              <table
+                style={styles.table}
+              >
 
                 <thead>
                   <tr>
-                    <th style={styles.th}>Date</th>
-                    <th style={styles.th}>Paid To</th>
-                    <th style={styles.th}>Category</th>
-                    <th style={styles.th}>Amount</th>
-                    <th style={styles.th}>Method</th>
-                    <th style={styles.th}>Note</th>
-                    <th style={styles.th}>Action</th>
+                    <th
+                      style={styles.th}
+                    >
+                      Date
+                    </th>
+
+                    <th
+                      style={styles.th}
+                    >
+                      Paid To
+                    </th>
+
+                    <th
+                      style={styles.th}
+                    >
+                      Category
+                    </th>
+
+                    <th
+                      style={styles.th}
+                    >
+                      Amount
+                    </th>
+
+                    <th
+                      style={styles.th}
+                    >
+                      Method
+                    </th>
+
+                    <th
+                      style={styles.th}
+                    >
+                      Note
+                    </th>
+
+                    <th
+                      style={styles.th}
+                    >
+                      Action
+                    </th>
                   </tr>
                 </thead>
 
                 <tbody>
-                  {records.map((item) => (
-                    <tr key={item.id}>
+                  {records.map(
+                    (item) => (
+                      <tr
+                        key={item.id}
+                      >
 
-                      <td style={styles.td}>
-                        {item.payment_date}
-                      </td>
-
-                      <td style={styles.td}>
-                        <strong>{item.paid_to}</strong>
-                      </td>
-
-                      <td style={styles.td}>
-                        {item.category}
-                      </td>
-
-                      <td style={styles.td}>
-                        <strong>
-                          {item.currency === "USD"
-                            ? "$"
-                            : "৳"}
-                          {Number(
-                            item.amount
-                          ).toLocaleString()}
-                        </strong>
-                      </td>
-
-                      <td style={styles.td}>
-                        {item.payment_method || "-"}
-                      </td>
-
-                      <td style={styles.td}>
-                        {item.note || "-"}
-                      </td>
-
-                      <td style={styles.td}>
-                        <button
-                          onClick={() =>
-                            deleteRecord(item.id)
+                        <td
+                          style={
+                            styles.td
                           }
-                          style={styles.deleteButton}
                         >
-                          Delete
-                        </button>
-                      </td>
+                          {
+                            item.payment_date
+                          }
+                        </td>
 
-                    </tr>
-                  ))}
+                        <td
+                          style={
+                            styles.td
+                          }
+                        >
+                          <strong>
+                            {
+                              item.paid_to
+                            }
+                          </strong>
+                        </td>
+
+                        <td
+                          style={
+                            styles.td
+                          }
+                        >
+                          {
+                            item.category
+                          }
+                        </td>
+
+                        <td
+                          style={
+                            styles.td
+                          }
+                        >
+                          <strong>
+                            {item.currency ===
+                            "USD"
+                              ? "$"
+                              : "৳"}
+
+                            {Number(
+                              item.amount
+                            ).toLocaleString()}
+                          </strong>
+                        </td>
+
+                        <td
+                          style={
+                            styles.td
+                          }
+                        >
+                          {
+                            item.payment_method ||
+                            "-"
+                          }
+                        </td>
+
+                        <td
+                          style={
+                            styles.td
+                          }
+                        >
+                          {
+                            item.note ||
+                            "-"
+                          }
+                        </td>
+
+                        <td
+                          style={
+                            styles.td
+                          }
+                        >
+                          <button
+                            onClick={() =>
+                              deleteRecord(
+                                item.id
+                              )
+                            }
+                            style={
+                              styles.deleteButton
+                            }
+                          >
+                            Delete
+                          </button>
+                        </td>
+
+                      </tr>
+                    )
+                  )}
                 </tbody>
 
               </table>
@@ -384,7 +808,10 @@ async function addMoneyOut(e: React.FormEvent) {
   );
 }
 
-const styles: Record<string, React.CSSProperties> = {
+const styles: Record<
+  string,
+  React.CSSProperties
+> = {
   page: {
     minHeight: "100vh",
     padding: "30px",
@@ -410,6 +837,8 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#666",
   },
 
+  /* MAIN SUMMARY */
+
   summaryGrid: {
     display: "grid",
     gridTemplateColumns:
@@ -422,7 +851,8 @@ const styles: Record<string, React.CSSProperties> = {
     background: "white",
     padding: "20px",
     borderRadius: "14px",
-    boxShadow: "0 4px 15px rgba(0,0,0,0.06)",
+    boxShadow:
+      "0 4px 15px rgba(0,0,0,0.06)",
     display: "flex",
     gap: "15px",
     alignItems: "center",
@@ -443,12 +873,85 @@ const styles: Record<string, React.CSSProperties> = {
     marginTop: "5px",
   },
 
+  /* CATEGORY */
+
+  categorySection: {
+    background: "white",
+    padding: "25px",
+    borderRadius: "14px",
+    marginBottom: "25px",
+    boxShadow:
+      "0 4px 15px rgba(0,0,0,0.06)",
+  },
+
+  categoryHeader: {
+    marginBottom: "18px",
+  },
+
+  categoryTitle: {
+    margin: 0,
+    fontSize: "22px",
+  },
+
+  categorySubtitle: {
+    marginTop: "6px",
+    marginBottom: 0,
+    color: "#777",
+    fontSize: "14px",
+  },
+
+  categoryGrid: {
+    display: "grid",
+    gridTemplateColumns:
+      "repeat(auto-fit, minmax(190px, 1fr))",
+    gap: "14px",
+  },
+
+  categoryCard: {
+    background: "#f8fafc",
+    border: "1px solid #e5e7eb",
+    borderRadius: "12px",
+    padding: "16px",
+    display: "flex",
+    alignItems: "center",
+    gap: "12px",
+  },
+
+  categoryIcon: {
+    fontSize: "28px",
+  },
+
+  categoryInfo: {
+    minWidth: 0,
+  },
+
+  categoryName: {
+    fontSize: "14px",
+    color: "#666",
+    marginBottom: "4px",
+  },
+
+  categoryBDT: {
+    fontSize: "20px",
+    fontWeight: 700,
+  },
+
+  categoryUSD: {
+    fontSize: "14px",
+    color: "#2563eb",
+    fontWeight: 600,
+    marginTop: "3px",
+  },
+
+  /* FORM */
+
   formCard: {
     background: "white",
     padding: "25px",
     borderRadius: "14px",
     marginBottom: "25px",
-    boxShadow: "0 4px 15px rgba(0,0,0,0.06)",
+    boxShadow:
+      "0 4px 15px rgba(0,0,0,0.06)",
   },
 
   formTitle: {
@@ -484,11 +987,14 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 600,
   },
 
+  /* HISTORY */
+
   section: {
     background: "white",
     padding: "25px",
     borderRadius: "14px",
-    boxShadow: "0 4px 15px rgba(0,0,0,0.06)",
+    boxShadow:
+      "0 4px 15px rgba(0,0,0,0.06)",
   },
 
   sectionTitle: {
