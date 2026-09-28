@@ -20,8 +20,6 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
 
   async function loadTasks() {
-    setLoading(true);
-
     const { data, error } = await supabase
       .from("office_tasks")
       .select(
@@ -47,12 +45,8 @@ export default function DashboardPage() {
   // STATUS HELPERS
   // =========================
 
-  function getStatus(task: Task) {
-    return (task.status || "Pending").trim().toLowerCase();
-  }
-
   function isCompleted(task: Task) {
-    const status = getStatus(task);
+    const status = (task.status || "").trim().toLowerCase();
 
     const total = Number(task.total_quantity || 0);
     const completed = Number(task.completed_quantity || 0);
@@ -65,7 +59,10 @@ export default function DashboardPage() {
   }
 
   function isPending(task: Task) {
-    return getStatus(task) === "pending";
+    return (
+      (task.status || "").trim().toLowerCase() ===
+      "pending"
+    );
   }
 
   function isInProgress(task: Task) {
@@ -73,36 +70,16 @@ export default function DashboardPage() {
   }
 
   // =========================
-  // TASK GROUPS
-  // =========================
-
-  const completedTaskList = tasks.filter((task) =>
-    isCompleted(task)
-  );
-
-  const uncompletedTaskList = tasks.filter(
-    (task) => !isCompleted(task)
-  );
-
-  // =========================
-  // COUNTS
+  // SUMMARY
   // =========================
 
   const totalTasks = tasks.length;
 
-  const completedTasks = completedTaskList.length;
+  const completedTasks = tasks.filter(isCompleted).length;
 
-  const pendingTasks = tasks.filter((task) =>
-    isPending(task)
-  ).length;
+  const pendingTasks = tasks.filter(isPending).length;
 
-  const inProgressTasks = tasks.filter((task) =>
-    isInProgress(task)
-  ).length;
-
-  // =========================
-  // OVERDUE
-  // =========================
+  const inProgressTasks = tasks.filter(isInProgress).length;
 
   const overdueTasks = tasks.filter((task) => {
     if (!task.deadline || isCompleted(task)) {
@@ -117,10 +94,6 @@ export default function DashboardPage() {
 
     return deadline < today;
   });
-
-  // =========================
-  // QUANTITY
-  // =========================
 
   const totalQuantity = tasks.reduce(
     (sum, task) =>
@@ -145,12 +118,18 @@ export default function DashboardPage() {
       : 0;
 
   // =========================
-  // EMPLOYEE REPORT
+  // EMPLOYEE-WISE
+  // ONLY UNCOMPLETE TASKS
   // =========================
 
   const employeeMap: Record<string, number> = {};
 
   tasks.forEach((task) => {
+    // Complete task এখানে count হবে না
+    if (isCompleted(task)) {
+      return;
+    }
+
     const employee =
       task.assigned_to || "Unassigned";
 
@@ -161,6 +140,10 @@ export default function DashboardPage() {
   const employees = Object.entries(employeeMap).sort(
     (a, b) => b[1] - a[1]
   );
+
+  // =========================
+  // LOADING
+  // =========================
 
   if (loading) {
     return (
@@ -243,6 +226,7 @@ export default function DashboardPage() {
 
       {/* STATUS REPORT */}
       <div style={sectionStyle}>
+
         <h2 style={sectionTitle}>
           📊 Status Report
         </h2>
@@ -270,47 +254,60 @@ export default function DashboardPage() {
           value={overdueTasks.length}
           total={totalTasks}
         />
+
       </div>
 
       {/* OVERALL PROGRESS */}
       <div style={sectionStyle}>
+
         <h2 style={sectionTitle}>
           📦 Overall Quantity Progress
         </h2>
 
         <div style={progressBackground}>
+
           <div
             style={{
               ...progressBar,
               width: `${progress}%`,
             }}
           />
+
         </div>
 
         <p style={progressText}>
           {progress}% Completed —{" "}
           {completedQuantity} / {totalQuantity}
         </p>
+
       </div>
 
       {/* OVERDUE TASKS */}
       <div style={sectionStyle}>
+
         <h2 style={sectionTitle}>
           ⚠️ Overdue Tasks
         </h2>
 
         {overdueTasks.length === 0 ? (
+
           <div style={successBox}>
             ✅ কোনো Overdue Task নেই
           </div>
+
         ) : (
+
           <div>
+
             {overdueTasks.map((task) => (
+
               <div
                 key={task.id}
                 style={overdueRow}
               >
+
                 <div>
+
                   <strong>
                     {task.task_name}
                   </strong>
@@ -320,9 +317,11 @@ export default function DashboardPage() {
                     {task.assigned_to ||
                       "Unassigned"}
                   </div>
+
                 </div>
 
                 <div style={overdueRight}>
+
                   <span style={overdueBadge}>
                     OVERDUE
                   </span>
@@ -330,170 +329,118 @@ export default function DashboardPage() {
                   <div style={smallText}>
                     Deadline: {task.deadline}
                   </div>
+
                 </div>
+
               </div>
+
             ))}
+
           </div>
+
         )}
+
       </div>
 
-      {/* EMPLOYEE REPORT */}
+      {/* EMPLOYEE-WISE UNCOMPLETE TASKS */}
       <div style={sectionStyle}>
+
         <h2 style={sectionTitle}>
-          👥 Employee-wise Task Report
+          👥 Employee-wise Pending Task
         </h2>
 
+        <p style={employeeSubtitle}>
+          কে কতগুলো কাজ এখনো শেষ করেনি
+        </p>
+
         {employees.length === 0 ? (
-          <p style={emptyStyle}>
-            কোনো Task নেই
-          </p>
+
+          <div style={successBox}>
+            🎉 সব Employee-এর সব Task Complete!
+          </div>
+
         ) : (
+
           employees.map(([name, count]) => (
+
             <div
               key={name}
               style={employeeRow}
             >
-              <strong>{name}</strong>
+
+              <strong>
+                {name}
+              </strong>
 
               <span style={employeeCount}>
-                {count} Task
+                {count} Task বাকি
               </span>
+
             </div>
+
           ))
-        )}
-      </div>
 
-      {/* =========================
-          UNCOMPLETED TASKS
-      ========================= */}
-
-      <div style={sectionStyle}>
-
-        <div style={sectionHeader}>
-          <h2 style={sectionTitle}>
-            🟠 Uncompleted Tasks
-          </h2>
-
-          <span style={uncompletedCountBadge}>
-            {uncompletedTaskList.length} Tasks
-          </span>
-        </div>
-
-        {uncompletedTaskList.length === 0 ? (
-          <div style={successBox}>
-            🎉 কোনো Uncompleted Task নেই
-          </div>
-        ) : (
-          <div>
-
-            {uncompletedTaskList.map((task) => (
-              <div
-                key={task.id}
-                style={uncompletedRow}
-              >
-
-                <div>
-                  <strong>
-                    {task.task_name}
-                  </strong>
-
-                  <div style={smallText}>
-                    👤{" "}
-                    {task.assigned_to ||
-                      "Unassigned"}
-                  </div>
-
-                  {task.deadline && (
-                    <div style={smallText}>
-                      📅 Deadline:{" "}
-                      {task.deadline}
-                    </div>
-                  )}
-                </div>
-
-                <div style={taskRight}>
-
-                  <div style={uncompletedStatus}>
-                    {task.status || "Pending"}
-                  </div>
-
-                  <div style={smallText}>
-                    📦{" "}
-                    {task.completed_quantity || 0}
-                    {" / "}
-                    {task.total_quantity || 0}
-                  </div>
-
-                </div>
-
-              </div>
-            ))}
-
-          </div>
         )}
 
       </div>
 
-      {/* =========================
-          COMPLETED TASKS
-      ========================= */}
-
+      {/* RECENT TASKS */}
       <div style={sectionStyle}>
 
-        <div style={sectionHeader}>
-          <h2 style={sectionTitle}>
-            🟢 Completed Tasks
-          </h2>
+        <h2 style={sectionTitle}>
+          📝 Recent Tasks
+        </h2>
 
-          <span style={completedCountBadge}>
-            {completedTaskList.length} Tasks
-          </span>
-        </div>
+        {tasks.length === 0 ? (
 
-        {completedTaskList.length === 0 ? (
           <p style={emptyStyle}>
-            এখনো কোনো Completed Task নেই।
+            এখনো কোনো office task নেই।
           </p>
+
         ) : (
-          <div>
 
-            {completedTaskList.map((task) => (
-              <div
-                key={task.id}
-                style={completedRow}
-              >
+          tasks.slice(0, 10).map((task) => (
 
-                <div>
-                  <strong>
-                    {task.task_name}
-                  </strong>
+            <div
+              key={task.id}
+              style={taskRow}
+            >
 
-                  <div style={smallText}>
-                    👤{" "}
-                    {task.assigned_to ||
-                      "Unassigned"}
-                  </div>
-                </div>
+              <div>
 
-                <div style={taskRight}>
+                <strong>
+                  {task.task_name}
+                </strong>
 
-                  <div style={completedStatus}>
-                    ✅ COMPLETED
-                  </div>
-
-                  <div style={smallText}>
-                    📦{" "}
-                    {task.completed_quantity || 0}
-                    {" / "}
-                    {task.total_quantity || 0}
-                  </div>
-
+                <div style={smallText}>
+                  👤{" "}
+                  {task.assigned_to ||
+                    "Unassigned"}
                 </div>
 
               </div>
-            ))}
 
-          </div>
+              <div style={taskRight}>
+
+                <div style={statusStyle}>
+                  {isCompleted(task)
+                    ? "Completed"
+                    : task.status}
+                </div>
+
+                <div style={smallText}>
+                  📦{" "}
+                  {task.completed_quantity || 0}
+                  {" / "}
+                  {task.total_quantity || 0}
+                </div>
+
+              </div>
+
+            </div>
+
+          ))
+
         )}
 
       </div>
@@ -503,7 +450,7 @@ export default function DashboardPage() {
 }
 
 /* =========================
-   COMPONENTS
+   STAT CARD
 ========================= */
 
 function StatCard({
@@ -538,6 +485,10 @@ function StatCard({
   );
 }
 
+/* =========================
+   REPORT ROW
+========================= */
+
 function ReportRow({
   label,
   value,
@@ -556,20 +507,26 @@ function ReportRow({
     <div style={reportRow}>
 
       <div style={reportTop}>
-        <strong>{label}</strong>
+
+        <strong>
+          {label}
+        </strong>
 
         <span>
           {value} ({percent}%)
         </span>
+
       </div>
 
       <div style={reportBackground}>
+
         <div
           style={{
             ...reportBar,
             width: `${percent}%`,
           }}
         />
+
       </div>
 
     </div>
@@ -657,15 +614,15 @@ const sectionStyle = {
 
 const sectionTitle = {
   marginTop: 0,
-  marginBottom: "18px",
+  marginBottom: "10px",
   fontSize: "20px",
 };
 
-const sectionHeader = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  gap: "10px",
+const employeeSubtitle = {
+  color: "#777",
+  fontSize: "14px",
+  marginTop: 0,
+  marginBottom: "15px",
 };
 
 const reportRow = {
@@ -754,74 +711,36 @@ const employeeRow = {
 };
 
 const employeeCount = {
-  background: "#f1f1f1",
-  padding: "6px 10px",
+  background: "#fff7ed",
+  color: "#c2410c",
+  padding: "6px 12px",
   borderRadius: "20px",
   fontSize: "13px",
+  fontWeight: "600",
+};
+
+const taskRow = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: "15px",
+  padding: "15px 0",
+  borderBottom: "1px solid #eee",
 };
 
 const taskRight = {
   textAlign: "right" as const,
 };
 
+const statusStyle = {
+  fontWeight: "600",
+  marginBottom: "5px",
+};
+
 const smallText = {
   fontSize: "13px",
   color: "#777",
   marginTop: "4px",
-};
-
-const uncompletedRow = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  gap: "15px",
-  padding: "15px",
-  marginBottom: "10px",
-  border: "1px solid #eee",
-  borderRadius: "10px",
-  background: "#fffaf5",
-};
-
-const completedRow = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  gap: "15px",
-  padding: "15px",
-  marginBottom: "10px",
-  border: "1px solid #eee",
-  borderRadius: "10px",
-  background: "#f6fff8",
-};
-
-const uncompletedStatus = {
-  color: "#b45309",
-  fontWeight: "700",
-  marginBottom: "5px",
-};
-
-const completedStatus = {
-  color: "#15803d",
-  fontWeight: "700",
-  marginBottom: "5px",
-};
-
-const uncompletedCountBadge = {
-  background: "#fff7ed",
-  color: "#c2410c",
-  padding: "6px 11px",
-  borderRadius: "20px",
-  fontSize: "13px",
-  fontWeight: "700",
-};
-
-const completedCountBadge = {
-  background: "#ecfdf5",
-  color: "#15803d",
-  padding: "6px 11px",
-  borderRadius: "20px",
-  fontSize: "13px",
-  fontWeight: "700",
 };
 
 const emptyStyle = {
