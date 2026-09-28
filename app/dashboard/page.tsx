@@ -19,23 +19,25 @@ export default function DashboardPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
 
-  async function loadTasks() {
-    const { data, error } = await supabase
-      .from("office_tasks")
-      .select(
-        "id, task_name, assigned_to, status, deadline, total_quantity, completed_quantity"
-      )
-      .order("created_at", { ascending: false });
+async function loadTasks() {
+  setLoading(true);
 
-    if (error) {
-      alert(error.message);
-      setLoading(false);
-      return;
-    }
+  const { data, error } = await supabase
+    .from("office_tasks")
+    .select(
+      "id, task_name, assigned_to, status, deadline, total_quantity, completed_quantity"
+    )
+    .order("created_at", { ascending: false });
 
-    setTasks(data || []);
+  if (error) {
+    alert("Dashboard Refresh Error: " + error.message);
     setLoading(false);
+    return;
   }
+
+  setTasks(data || []);
+  setLoading(false);
+}
 
   useEffect(() => {
     loadTasks();
@@ -169,12 +171,18 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        <button
-          onClick={loadTasks}
-          style={refreshButtonStyle}
-        >
-          🔄 Refresh
-        </button>
+     <button
+  type="button"
+  onClick={loadTasks}
+  disabled={loading}
+  style={{
+    ...refreshButtonStyle,
+    opacity: loading ? 0.6 : 1,
+    cursor: loading ? "not-allowed" : "pointer",
+  }}
+>
+  {loading ? "🔄 Refreshing..." : "🔄 Refresh"}
+</button>
       </div>
 
       {/* STAT CARDS */}
