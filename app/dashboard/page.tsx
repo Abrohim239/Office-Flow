@@ -19,25 +19,29 @@ export default function DashboardPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
 
-async function loadTasks() {
-  setLoading(true);
+  // =========================
+  // LOAD TASKS
+  // =========================
 
-  const { data, error } = await supabase
-    .from("office_tasks")
-    .select(
-      "id, task_name, assigned_to, status, deadline, total_quantity, completed_quantity"
-    )
-    .order("created_at", { ascending: false });
+  async function loadTasks() {
+    setLoading(true);
 
-  if (error) {
-    alert("Dashboard Refresh Error: " + error.message);
+    const { data, error } = await supabase
+      .from("office_tasks")
+      .select(
+        "id, task_name, assigned_to, status, deadline, total_quantity, completed_quantity"
+      )
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      alert("Dashboard Refresh Error: " + error.message);
+      setLoading(false);
+      return;
+    }
+
+    setTasks(data || []);
     setLoading(false);
-    return;
   }
-
-  setTasks(data || []);
-  setLoading(false);
-}
 
   useEffect(() => {
     loadTasks();
@@ -48,10 +52,17 @@ async function loadTasks() {
   // =========================
 
   function isCompleted(task: Task) {
-    const status = (task.status || "").trim().toLowerCase();
+    const status = (task.status || "")
+      .trim()
+      .toLowerCase();
 
-    const total = Number(task.total_quantity || 0);
-    const completed = Number(task.completed_quantity || 0);
+    const total = Number(
+      task.total_quantity || 0
+    );
+
+    const completed = Number(
+      task.completed_quantity || 0
+    );
 
     return (
       status === "completed" ||
@@ -62,13 +73,17 @@ async function loadTasks() {
 
   function isPending(task: Task) {
     return (
-      (task.status || "").trim().toLowerCase() ===
-      "pending"
+      (task.status || "")
+        .trim()
+        .toLowerCase() === "pending"
     );
   }
 
   function isInProgress(task: Task) {
-    return !isPending(task) && !isCompleted(task);
+    return (
+      !isPending(task) &&
+      !isCompleted(task)
+    );
   }
 
   // =========================
@@ -77,11 +92,18 @@ async function loadTasks() {
 
   const totalTasks = tasks.length;
 
-  const completedTasks = tasks.filter(isCompleted).length;
+  const completedTasks =
+    tasks.filter(isCompleted).length;
 
-  const pendingTasks = tasks.filter(isPending).length;
+  const pendingTasks =
+    tasks.filter(isPending).length;
 
-  const inProgressTasks = tasks.filter(isInProgress).length;
+  const inProgressTasks =
+    tasks.filter(isInProgress).length;
+
+  // =========================
+  // OVERDUE
+  // =========================
 
   const overdueTasks = tasks.filter((task) => {
     if (!task.deadline || isCompleted(task)) {
@@ -97,15 +119,21 @@ async function loadTasks() {
     return deadline < today;
   });
 
+  // =========================
+  // QUANTITY
+  // =========================
+
   const totalQuantity = tasks.reduce(
     (sum, task) =>
-      sum + Number(task.total_quantity || 0),
+      sum +
+      Number(task.total_quantity || 0),
     0
   );
 
   const completedQuantity = tasks.reduce(
     (sum, task) =>
-      sum + Number(task.completed_quantity || 0),
+      sum +
+      Number(task.completed_quantity || 0),
     0
   );
 
@@ -113,21 +141,24 @@ async function loadTasks() {
     totalQuantity > 0
       ? Math.min(
           Math.round(
-            (completedQuantity / totalQuantity) * 100
+            (completedQuantity /
+              totalQuantity) *
+              100
           ),
           100
         )
       : 0;
 
   // =========================
-  // EMPLOYEE-WISE
-  // ONLY UNCOMPLETE TASKS
+  // EMPLOYEE-WISE UNCOMPLETE
   // =========================
 
-  const employeeMap: Record<string, number> = {};
+  const uncompleteEmployeeMap: Record<
+    string,
+    number
+  > = {};
 
   tasks.forEach((task) => {
-    // Complete task এখানে count হবে না
     if (isCompleted(task)) {
       return;
     }
@@ -135,13 +166,42 @@ async function loadTasks() {
     const employee =
       task.assigned_to || "Unassigned";
 
-    employeeMap[employee] =
-      (employeeMap[employee] || 0) + 1;
+    uncompleteEmployeeMap[employee] =
+      (uncompleteEmployeeMap[employee] || 0) +
+      1;
   });
 
-  const employees = Object.entries(employeeMap).sort(
-    (a, b) => b[1] - a[1]
-  );
+  const uncompleteEmployees =
+    Object.entries(
+      uncompleteEmployeeMap
+    ).sort((a, b) => b[1] - a[1]);
+
+  // =========================
+  // EMPLOYEE-WISE COMPLETED
+  // =========================
+
+  const completedEmployeeMap: Record<
+    string,
+    number
+  > = {};
+
+  tasks.forEach((task) => {
+    if (!isCompleted(task)) {
+      return;
+    }
+
+    const employee =
+      task.assigned_to || "Unassigned";
+
+    completedEmployeeMap[employee] =
+      (completedEmployeeMap[employee] || 0) +
+      1;
+  });
+
+  const completedEmployees =
+    Object.entries(
+      completedEmployeeMap
+    ).sort((a, b) => b[1] - a[1]);
 
   // =========================
   // LOADING
@@ -156,11 +216,16 @@ async function loadTasks() {
     );
   }
 
+  // =========================
+  // UI
+  // =========================
+
   return (
     <main style={pageStyle}>
 
       {/* HEADER */}
       <div style={headerStyle}>
+
         <div>
           <h1 style={titleStyle}>
             OfficeFlow Dashboard
@@ -171,18 +236,23 @@ async function loadTasks() {
           </p>
         </div>
 
-     <button
-  type="button"
-  onClick={loadTasks}
-  disabled={loading}
-  style={{
-    ...refreshButtonStyle,
-    opacity: loading ? 0.6 : 1,
-    cursor: loading ? "not-allowed" : "pointer",
-  }}
->
-  {loading ? "🔄 Refreshing..." : "🔄 Refresh"}
-</button>
+        <button
+          type="button"
+          onClick={loadTasks}
+          disabled={loading}
+          style={{
+            ...refreshButtonStyle,
+            opacity: loading ? 0.6 : 1,
+            cursor: loading
+              ? "not-allowed"
+              : "pointer",
+          }}
+        >
+          {loading
+            ? "🔄 Refreshing..."
+            : "🔄 Refresh"}
+        </button>
+
       </div>
 
       {/* STAT CARDS */}
@@ -335,7 +405,8 @@ async function loadTasks() {
                   </span>
 
                   <div style={smallText}>
-                    Deadline: {task.deadline}
+                    Deadline:{" "}
+                    {task.deadline}
                   </div>
 
                 </div>
@@ -350,18 +421,21 @@ async function loadTasks() {
 
       </div>
 
-      {/* EMPLOYEE-WISE UNCOMPLETE TASKS */}
+      {/* =========================
+          UNCOMPLETE EMPLOYEE REPORT
+      ========================= */}
+
       <div style={sectionStyle}>
 
         <h2 style={sectionTitle}>
-          👥 Employee-wise Pending Task
+          👥 Uncomplete Task by Employee
         </h2>
 
         <p style={employeeSubtitle}>
           কে কতগুলো কাজ এখনো শেষ করেনি
         </p>
 
-        {employees.length === 0 ? (
+        {uncompleteEmployees.length === 0 ? (
 
           <div style={successBox}>
             🎉 সব Employee-এর সব Task Complete!
@@ -369,24 +443,77 @@ async function loadTasks() {
 
         ) : (
 
-          employees.map(([name, count]) => (
+          uncompleteEmployees.map(
+            ([name, count]) => (
 
-            <div
-              key={name}
-              style={employeeRow}
-            >
+              <div
+                key={name}
+                style={employeeRow}
+              >
 
-              <strong>
-                {name}
-              </strong>
+                <strong>
+                  {name}
+                </strong>
 
-              <span style={employeeCount}>
-                {count} Task বাকি
-              </span>
+                <span
+                  style={employeePendingCount}
+                >
+                  {count} Task বাকি
+                </span>
 
-            </div>
+              </div>
 
-          ))
+            )
+          )
+
+        )}
+
+      </div>
+
+      {/* =========================
+          COMPLETED EMPLOYEE REPORT
+      ========================= */}
+
+      <div style={sectionStyle}>
+
+        <h2 style={sectionTitle}>
+          ✅ Completed Task by Employee
+        </h2>
+
+        <p style={employeeSubtitle}>
+          কে কতগুলো কাজ Complete করেছে
+        </p>
+
+        {completedEmployees.length === 0 ? (
+
+          <p style={emptyStyle}>
+            এখনো কোনো Completed Task নেই।
+          </p>
+
+        ) : (
+
+          completedEmployees.map(
+            ([name, count]) => (
+
+              <div
+                key={name}
+                style={employeeRow}
+              >
+
+                <strong>
+                  {name}
+                </strong>
+
+                <span
+                  style={employeeCompletedCount}
+                >
+                  {count} Task Complete
+                </span>
+
+              </div>
+
+            )
+          )
 
         )}
 
@@ -407,47 +534,57 @@ async function loadTasks() {
 
         ) : (
 
-          tasks.slice(0, 10).map((task) => (
+          tasks.slice(0, 10).map(
+            (task) => (
 
-            <div
-              key={task.id}
-              style={taskRow}
-            >
+              <div
+                key={task.id}
+                style={taskRow}
+              >
 
-              <div>
+                <div>
 
-                <strong>
-                  {task.task_name}
-                </strong>
+                  <strong>
+                    {task.task_name}
+                  </strong>
 
-                <div style={smallText}>
-                  👤{" "}
-                  {task.assigned_to ||
-                    "Unassigned"}
+                  <div style={smallText}>
+                    👤{" "}
+                    {task.assigned_to ||
+                      "Unassigned"}
+                  </div>
+
+                </div>
+
+                <div style={taskRight}>
+
+                  <div style={statusStyle}>
+
+                    {isCompleted(task)
+                      ? "Completed"
+                      : task.status}
+
+                  </div>
+
+                  <div style={smallText}>
+
+                    📦{" "}
+                    {task.completed_quantity ||
+                      0}
+
+                    {" / "}
+
+                    {task.total_quantity ||
+                      0}
+
+                  </div>
+
                 </div>
 
               </div>
 
-              <div style={taskRight}>
-
-                <div style={statusStyle}>
-                  {isCompleted(task)
-                    ? "Completed"
-                    : task.status}
-                </div>
-
-                <div style={smallText}>
-                  📦{" "}
-                  {task.completed_quantity || 0}
-                  {" / "}
-                  {task.total_quantity || 0}
-                </div>
-
-              </div>
-
-            </div>
-
-          ))
+            )
+          )
 
         )}
 
@@ -508,7 +645,9 @@ function ReportRow({
 }) {
   const percent =
     total > 0
-      ? Math.round((value / total) * 100)
+      ? Math.round(
+          (value / total) * 100
+        )
       : 0;
 
   return (
@@ -718,9 +857,18 @@ const employeeRow = {
   borderBottom: "1px solid #eee",
 };
 
-const employeeCount = {
+const employeePendingCount = {
   background: "#fff7ed",
   color: "#c2410c",
+  padding: "6px 12px",
+  borderRadius: "20px",
+  fontSize: "13px",
+  fontWeight: "600",
+};
+
+const employeeCompletedCount = {
+  background: "#dcfce7",
+  color: "#166534",
   padding: "6px 12px",
   borderRadius: "20px",
   fontSize: "13px",
