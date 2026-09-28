@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createClient } from "../../lib/supabase/client";
 
 const supabase = createClient();
@@ -8,588 +8,1256 @@ const supabase = createClient();
 type Task = {
   id: string;
   task_name: string;
-  assigned_to: string | null;
-  status: string;
-  deadline: string | null;
-  total_quantity: number;
-  completed_quantity: number;
+  description?: string | null;
+  assigned_to?: string | null;
+  priority?: string | null;
+  status?: string | null;
+  start_date?: string | null;
+  deadline?: string | null;
+  total_quantity?: number | null;
+  completed_quantity?: number | null;
+  notes?: string | null;
+  created_at?: string | null;
 };
+
+type History = {
+  id: string;
+  task_id: string;
+  previous_status?: string | null;
+  new_status: string;
+  completed_quantity?: number | null;
+  note?: string | null;
+  created_at: string;
+};
+
+function getStatus(task: Task) {
+  return (task.status || "Pending").trim().toLowerCase();
+}
+
+function isPending(task: Task) {
+  return getStatus(task) === "pending";
+}
+
+function isCompleted(task: Task) {
+  const status = getStatus(task);
+
+  const total = Number(task.total_quantity || 0);
+  const completed = Number(
+    task.completed_quantity || 0
+  );
+
+  return (
+    status === "completed" ||
+    status === "complete" ||
+    (total > 0 && completed >= total)
+  );
+}
+
+function isInProgress(task: Task) {
+  return !isPending(task) && !isCompleted(task);
+}
+
+function isOverdue(task: Task) {
+  if (!task.deadline || isCompleted(task)) {
+    return false;
+  }
+
+  const today = new Date()
+    .toISOString()
+    .split("T")[0];
+
+  return task.deadline < today;
+}
+
+function monthKey(date: string) {
+  return date.slice(0, 7);
+}
+
+function monthLabel(key: string) {
+  const [year, month] = key.split("-");
+
+  return new Date(
+    Number(year),
+    Number(month) - 1,
+    1
+  ).toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+  });
+}
+
+function getMonthStart(key: string) {
+  return `${key}-01`;
+}
+
+function getMonthEnd(key: string) {
+  const [year, month] = key.split("-");
+
+  const date = new Date(
+    Number(year),
+    Number(month),
+    0
+  );
+
+  return date.toISOString().split("T")[0];
+}
 
 export default function DashboardPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [history, setHistory] = useState<History[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const [selectedMonth, setSelectedMonth] =
+    useState("");
+
   // =========================
-  // LOAD TASKS
+  // LOAD DATA
   // =========================
 
-  async function loadTasks() {
+  async function loadData() {
     setLoading(true);
 
-    const { data, error } = await supabase
-      .from("office_tasks")
-      .select(
-        "id, task_name, assigned_to, status, deadline, total_quantity, completed_quantity"
-      )
-      .order("created_at", { ascending: false });
+    const [taskResult, historyResult] =
+      await Promise.all([
+        supabase
+          .from("office_tasks")
+          .select("*")
+          .order("created_at", {
+            ascending: false,
+          }),
 
-    if (error) {
-      alert("Dashboard Refresh Error: " + error.message);
+        supabase
+          .from("office_task_updates")
+          .select("*")
+          .order("created_at", {
+            ascending: true,
+          }),
+      ]);
+
+    if (taskResult.error) {
+      alert(
+        "Task Load Error: " +
+          taskResult.error.message
+      );
+
       setLoading(false);
       return;
     }
 
-    setTasks(data || []);
+    if (historyResult.error) {
+      alert(
+        "History Load Error: " +
+          historyResult.error.message
+      );
+
+      setLoading(false);
+      return;
+    }
+
+    const loadedTasks = taskResult.data || [];
+    const loadedHistory =
+      historyResult.data || [];
+
+    setTasks(loadedTasks);
+    setHistory(loadedHistory);
+
+    // Latest month automatically select
+    const allMonths = [
+      ...loadedTasks
+        .map((task) =>
+          task.created_at
+            ? monthKey(task.created_at)
+            : ""
+        )
+        .filter(Boolean),
+
+      ...loadedHistory.map((item) =>
+        monthKey(item.created_at)
+      ),
+    ];
+
+    const uniqueMonths = Array.from(
+      new Set(allMonths)
+    ).sort();
+
+    if (
+      uniqueMonths.length > 0 &&
+      !selectedMonth
+    ) {
+      setSelectedMonth(
+        uniqueMonths[uniqueMonths.length - 1]
+      );
+    }
+
     setLoading(false);
   }
 
   useEffect(() => {
-    loadTasks();
+    loadData();
   }, []);
 
   // =========================
-  // STATUS HELPERS
+  // AVAILABLE MONTHS
   // =========================
 
-  function isCompleted(task: Task) {
-    const status = (task.status || "")
-      .trim()
-      .toLowerCase();
+  const months = useMemo(() => {
+    const monthSet = new Set<string>();
+
+    tasks.forEach((task) => {
+      if (task.created_at) {
+        monthSet.add(
+          monthKey(task.created_at)
+        );
+      }
+    });
+
+    history.forEach((item) => {
+      if (item.created_at) {
+        monthSet.add(
+          monthKey(item.created_at)
+        );
+      }
+    });
+
+    const result = Array.from(monthSet).sort();
+
+    return result.reverse();
+  }, [tasks, history]);
+
+  // =========================
+  // TASK SNAPSHOT
+  // =========================
+
+  function getTaskSnapshot(
+    task: Task,
+    endDate: string
+  ) {
+    const taskHistory = history
+      .filter(
+        (item) =>
+          item.task_id === task.id &&
+          item.created_at.slice(0, 10) <=
+            endDate
+      )
+      .sort(
+        (a, b) =>
+          new Date(a.created_at).getTime() -
+          new Date(b.created_at).getTime()
+      );
+
+    if (taskHistory.length === 0) {
+      return {
+        status: task.status || "Pending",
+        completed_quantity:
+          Number(
+            task.completed_quantity || 0
+          ),
+      };
+    }
+
+    const latest =
+      taskHistory[taskHistory.length - 1];
+
+    return {
+      status:
+        latest.new_status ||
+        task.status ||
+        "Pending",
+
+      completed_quantity:
+        Number(
+          latest.completed_quantity ??
+            task.completed_quantity ??
+            0
+        ),
+    };
+  }
+
+  function snapshotIsCompleted(
+    task: Task,
+    snapshot: {
+      status: string;
+      completed_quantity: number;
+    }
+  ) {
+    const status =
+      snapshot.status
+        .trim()
+        .toLowerCase();
 
     const total = Number(
       task.total_quantity || 0
     );
 
-    const completed = Number(
-      task.completed_quantity || 0
-    );
-
     return (
       status === "completed" ||
       status === "complete" ||
-      (total > 0 && completed >= total)
-    );
-  }
-
-  function isPending(task: Task) {
-    return (
-      (task.status || "")
-        .trim()
-        .toLowerCase() === "pending"
-    );
-  }
-
-  function isInProgress(task: Task) {
-    return (
-      !isPending(task) &&
-      !isCompleted(task)
+      (total > 0 &&
+        snapshot.completed_quantity >=
+          total)
     );
   }
 
   // =========================
-  // SUMMARY
+  // MONTH DATA
   // =========================
 
-  const totalTasks = tasks.length;
-
-  const completedTasks =
-    tasks.filter(isCompleted).length;
-
-  const pendingTasks =
-    tasks.filter(isPending).length;
-
-  const inProgressTasks =
-    tasks.filter(isInProgress).length;
-
-  // =========================
-  // OVERDUE
-  // =========================
-
-  const overdueTasks = tasks.filter((task) => {
-    if (!task.deadline || isCompleted(task)) {
-      return false;
+  const monthData = useMemo(() => {
+    if (!selectedMonth) {
+      return {
+        monthTasks: [],
+        completedTasks: [],
+        uncompleteTasks: [],
+        carryoverTasks: [],
+      };
     }
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const monthStart =
+      getMonthStart(selectedMonth);
 
-    const deadline = new Date(task.deadline);
-    deadline.setHours(0, 0, 0, 0);
+    const monthEnd =
+      getMonthEnd(selectedMonth);
 
-    return deadline < today;
-  });
+    // Tasks existing by month end
+    const monthTasks = tasks.filter(
+      (task) => {
+        if (!task.created_at) {
+          return false;
+        }
+
+        return (
+          task.created_at.slice(0, 10) <=
+          monthEnd
+        );
+      }
+    );
+
+    // Completed during selected month
+    const completedTasks = monthTasks.filter(
+      (task) => {
+        const completedHistory =
+          history.filter(
+            (item) =>
+              item.task_id === task.id &&
+              item.created_at.slice(0, 7) ===
+                selectedMonth &&
+              snapshotIsCompleted(task, {
+                status:
+                  item.new_status,
+                completed_quantity:
+                  Number(
+                    item.completed_quantity ||
+                      0
+                  ),
+              })
+          );
+
+        return completedHistory.length > 0;
+      }
+    );
+
+    // Tasks still incomplete at month end
+    const uncompleteTasks =
+      monthTasks.filter((task) => {
+        const snapshot =
+          getTaskSnapshot(
+            task,
+            monthEnd
+          );
+
+        return !snapshotIsCompleted(
+          task,
+          snapshot
+        );
+      });
+
+    // Tasks from previous period which
+    // were still pending when month started
+    const carryoverTasks =
+      tasks.filter((task) => {
+        if (!task.created_at) {
+          return false;
+        }
+
+        const createdDate =
+          task.created_at.slice(0, 10);
+
+        if (createdDate >= monthStart) {
+          return false;
+        }
+
+        const beforeMonthEndSnapshot =
+          getTaskSnapshot(
+            task,
+            getPreviousDay(monthStart)
+          );
+
+        return !snapshotIsCompleted(
+          task,
+          beforeMonthEndSnapshot
+        );
+      });
+
+    return {
+      monthTasks,
+      completedTasks,
+      uncompleteTasks,
+      carryoverTasks,
+    };
+  }, [tasks, history, selectedMonth]);
 
   // =========================
-  // QUANTITY
+  // PREVIOUS DAY
   // =========================
 
-  const totalQuantity = tasks.reduce(
-    (sum, task) =>
-      sum +
-      Number(task.total_quantity || 0),
-    0
-  );
+  function getPreviousDay(date: string) {
+    const d = new Date(date);
 
-  const completedQuantity = tasks.reduce(
-    (sum, task) =>
-      sum +
-      Number(task.completed_quantity || 0),
-    0
-  );
+    d.setDate(d.getDate() - 1);
 
-  const progress =
-    totalQuantity > 0
-      ? Math.min(
-          Math.round(
-            (completedQuantity /
-              totalQuantity) *
-              100
-          ),
-          100
+    return d
+      .toISOString()
+      .split("T")[0];
+  }
+
+  // =========================
+  // SELECTED MONTH SUMMARY
+  // =========================
+
+  const summary = useMemo(() => {
+    const selectedTasks =
+      monthData.monthTasks;
+
+    const totalTasks =
+      selectedTasks.length;
+
+    let pending = 0;
+    let inProgress = 0;
+    let completed = 0;
+
+    let totalQuantity = 0;
+    let completedQuantity = 0;
+
+    selectedTasks.forEach((task) => {
+      const snapshot =
+        getTaskSnapshot(
+          task,
+          selectedMonth
+            ? getMonthEnd(selectedMonth)
+            : ""
+        );
+
+      totalQuantity += Number(
+        task.total_quantity || 0
+      );
+
+      completedQuantity +=
+        snapshot.completed_quantity;
+
+      if (
+        snapshotIsCompleted(
+          task,
+          snapshot
         )
-      : 0;
+      ) {
+        completed++;
+      } else if (
+        snapshot.status
+          .trim()
+          .toLowerCase() ===
+        "pending"
+      ) {
+        pending++;
+      } else {
+        inProgress++;
+      }
+    });
+
+    const overdue =
+      selectedTasks.filter((task) => {
+        const snapshot =
+          getTaskSnapshot(
+            task,
+            getMonthEnd(selectedMonth)
+          );
+
+        if (
+          snapshotIsCompleted(
+            task,
+            snapshot
+          )
+        ) {
+          return false;
+        }
+
+        return (
+          task.deadline &&
+          task.deadline <
+            getMonthEnd(selectedMonth)
+        );
+      }).length;
+
+    const progress =
+      totalQuantity > 0
+        ? Math.min(
+            100,
+            Math.round(
+              (completedQuantity /
+                totalQuantity) *
+                100
+            )
+          )
+        : 0;
+
+    return {
+      totalTasks,
+      pending,
+      inProgress,
+      completed,
+      overdue,
+      totalQuantity,
+      completedQuantity,
+      progress,
+    };
+  }, [
+    monthData.monthTasks,
+    selectedMonth,
+    history,
+  ]);
 
   // =========================
   // EMPLOYEE-WISE UNCOMPLETE
   // =========================
 
-  const uncompleteEmployeeMap: Record<
-    string,
-    number
-  > = {};
+  const employeePending = useMemo(() => {
+    const map: Record<
+      string,
+      number
+    > = {};
 
-  tasks.forEach((task) => {
-    if (isCompleted(task)) {
-      return;
-    }
+    monthData.uncompleteTasks.forEach(
+      (task) => {
+        const name =
+          task.assigned_to ||
+          "Unassigned";
 
-    const employee =
-      task.assigned_to || "Unassigned";
+        map[name] =
+          (map[name] || 0) + 1;
+      }
+    );
 
-    uncompleteEmployeeMap[employee] =
-      (uncompleteEmployeeMap[employee] || 0) +
-      1;
-  });
-
-  const uncompleteEmployees =
-    Object.entries(
-      uncompleteEmployeeMap
-    ).sort((a, b) => b[1] - a[1]);
+    return Object.entries(map).sort(
+      (a, b) => b[1] - a[1]
+    );
+  }, [monthData.uncompleteTasks]);
 
   // =========================
   // EMPLOYEE-WISE COMPLETED
   // =========================
 
-  const completedEmployeeMap: Record<
-    string,
-    number
-  > = {};
+  const employeeCompleted = useMemo(() => {
+    const map: Record<
+      string,
+      number
+    > = {};
 
-  tasks.forEach((task) => {
-    if (!isCompleted(task)) {
-      return;
-    }
+    monthData.completedTasks.forEach(
+      (task) => {
+        const name =
+          task.assigned_to ||
+          "Unassigned";
 
-    const employee =
-      task.assigned_to || "Unassigned";
+        map[name] =
+          (map[name] || 0) + 1;
+      }
+    );
 
-    completedEmployeeMap[employee] =
-      (completedEmployeeMap[employee] || 0) +
-      1;
-  });
-
-  const completedEmployees =
-    Object.entries(
-      completedEmployeeMap
-    ).sort((a, b) => b[1] - a[1]);
+    return Object.entries(map).sort(
+      (a, b) => b[1] - a[1]
+    );
+  }, [monthData.completedTasks]);
 
   // =========================
-  // LOADING
+  // REFRESH
   // =========================
 
   if (loading) {
     return (
-      <main style={pageStyle}>
-        <h1>OfficeFlow Dashboard</h1>
-        <p>Loading...</p>
+      <main style={styles.page}>
+        <div style={styles.container}>
+          <h1 style={styles.title}>
+            OfficeFlow Dashboard
+          </h1>
+
+          <p>Loading...</p>
+        </div>
       </main>
     );
   }
 
-  // =========================
-  // UI
-  // =========================
-
   return (
-    <main style={pageStyle}>
+    <main style={styles.page}>
+      <div style={styles.container}>
 
-      {/* HEADER */}
-      <div style={headerStyle}>
+        {/* HEADER */}
 
-        <div>
-          <h1 style={titleStyle}>
-            OfficeFlow Dashboard
-          </h1>
+        <div style={styles.header}>
 
-          <p style={subtitleStyle}>
-            অফিসের সব কাজ এক নজরে দেখুন
-          </p>
-        </div>
+          <div>
+            <h1 style={styles.title}>
+              OfficeFlow Dashboard
+            </h1>
 
-        <button
-          type="button"
-          onClick={loadTasks}
-          disabled={loading}
-          style={{
-            ...refreshButtonStyle,
-            opacity: loading ? 0.6 : 1,
-            cursor: loading
-              ? "not-allowed"
-              : "pointer",
-          }}
-        >
-          {loading
-            ? "🔄 Refreshing..."
-            : "🔄 Refresh"}
-        </button>
-
-      </div>
-
-      {/* STAT CARDS */}
-      <div style={gridStyle}>
-
-        <StatCard
-          title="Total Tasks"
-          value={totalTasks}
-          icon="📋"
-        />
-
-        <StatCard
-          title="Pending"
-          value={pendingTasks}
-          icon="⏳"
-        />
-
-        <StatCard
-          title="In Progress"
-          value={inProgressTasks}
-          icon="🔄"
-        />
-
-        <StatCard
-          title="Completed"
-          value={completedTasks}
-          icon="✅"
-        />
-
-        <StatCard
-          title="Overdue"
-          value={overdueTasks.length}
-          icon="⚠️"
-        />
-
-        <StatCard
-          title="Total Quantity"
-          value={totalQuantity}
-          icon="📦"
-        />
-
-        <StatCard
-          title="Completed Quantity"
-          value={completedQuantity}
-          icon="✔️"
-        />
-
-      </div>
-
-      {/* STATUS REPORT */}
-      <div style={sectionStyle}>
-
-        <h2 style={sectionTitle}>
-          📊 Status Report
-        </h2>
-
-        <ReportRow
-          label="⏳ Pending"
-          value={pendingTasks}
-          total={totalTasks}
-        />
-
-        <ReportRow
-          label="🔄 In Progress"
-          value={inProgressTasks}
-          total={totalTasks}
-        />
-
-        <ReportRow
-          label="✅ Completed"
-          value={completedTasks}
-          total={totalTasks}
-        />
-
-        <ReportRow
-          label="⚠️ Overdue"
-          value={overdueTasks.length}
-          total={totalTasks}
-        />
-
-      </div>
-
-      {/* OVERALL PROGRESS */}
-      <div style={sectionStyle}>
-
-        <h2 style={sectionTitle}>
-          📦 Overall Quantity Progress
-        </h2>
-
-        <div style={progressBackground}>
-
-          <div
-            style={{
-              ...progressBar,
-              width: `${progress}%`,
-            }}
-          />
-
-        </div>
-
-        <p style={progressText}>
-          {progress}% Completed —{" "}
-          {completedQuantity} / {totalQuantity}
-        </p>
-
-      </div>
-
-      {/* OVERDUE TASKS */}
-      <div style={sectionStyle}>
-
-        <h2 style={sectionTitle}>
-          ⚠️ Overdue Tasks
-        </h2>
-
-        {overdueTasks.length === 0 ? (
-
-          <div style={successBox}>
-            ✅ কোনো Overdue Task নেই
+            <p style={styles.subtitle}>
+              Office Task Management Dashboard
+            </p>
           </div>
 
-        ) : (
+          <button
+            onClick={loadData}
+            style={styles.refreshButton}
+          >
+            🔄 Refresh
+          </button>
+
+        </div>
+
+        {/* MONTH SELECT */}
+
+        <section style={styles.monthPanel}>
 
           <div>
 
-            {overdueTasks.map((task) => (
+            <h2 style={styles.monthTitle}>
+              📅 Monthly Task Dashboard
+            </h2>
 
-              <div
-                key={task.id}
-                style={overdueRow}
+            <p style={styles.monthSubtitle}>
+              যে মাস select করবেন সেই মাসের
+              Task Report দেখাবে
+            </p>
+
+          </div>
+
+          <select
+            value={selectedMonth}
+            onChange={(e) =>
+              setSelectedMonth(
+                e.target.value
+              )
+            }
+            style={styles.monthSelect}
+          >
+
+            <option value="">
+              -- Month Select করুন --
+            </option>
+
+            {months.map((month) => (
+              <option
+                key={month}
+                value={month}
               >
-
-                <div>
-
-                  <strong>
-                    {task.task_name}
-                  </strong>
-
-                  <div style={smallText}>
-                    👤{" "}
-                    {task.assigned_to ||
-                      "Unassigned"}
-                  </div>
-
-                </div>
-
-                <div style={overdueRight}>
-
-                  <span style={overdueBadge}>
-                    OVERDUE
-                  </span>
-
-                  <div style={smallText}>
-                    Deadline:{" "}
-                    {task.deadline}
-                  </div>
-
-                </div>
-
-              </div>
-
+                {monthLabel(month)}
+              </option>
             ))}
 
+          </select>
+
+        </section>
+
+        {selectedMonth && (
+          <div style={styles.selectedMonthBadge}>
+            📅 Showing:{" "}
+            <strong>
+              {monthLabel(selectedMonth)}
+            </strong>
+          </div>
+        )}
+
+        {/* SUMMARY CARDS */}
+
+        <section style={styles.cards}>
+
+          <StatCard
+            title="Total Tasks"
+            value={summary.totalTasks}
+            icon="📋"
+          />
+
+          <StatCard
+            title="Pending"
+            value={summary.pending}
+            icon="⏳"
+          />
+
+          <StatCard
+            title="In Progress"
+            value={summary.inProgress}
+            icon="⚙️"
+          />
+
+          <StatCard
+            title="Completed"
+            value={summary.completed}
+            icon="✅"
+          />
+
+          <StatCard
+            title="Overdue"
+            value={summary.overdue}
+            icon="⚠️"
+          />
+
+          <StatCard
+            title="Total Quantity"
+            value={summary.totalQuantity}
+            icon="📦"
+          />
+
+          <StatCard
+            title="Completed Quantity"
+            value={summary.completedQuantity}
+            icon="🎯"
+          />
+
+          <StatCard
+            title="Progress"
+            value={`${summary.progress}%`}
+            icon="📊"
+          />
+
+        </section>
+
+        {/* =========================
+            COMPLETED TASKS
+        ========================= */}
+
+        <section style={styles.panel}>
+
+          <div style={styles.sectionHeader}>
+
+            <div>
+              <h2 style={styles.sectionTitle}>
+                ✅ {monthLabel(
+                  selectedMonth
+                )} — Completed Tasks
+              </h2>
+
+              <p style={styles.sectionSubtitle}>
+                এই মাসে Complete হওয়া কাজ
+              </p>
+            </div>
+
+            <span
+              style={styles.completedBadge}
+            >
+              {monthData.completedTasks.length}
+            </span>
+
           </div>
 
-        )}
+          {monthData.completedTasks.length ===
+          0 ? (
 
-      </div>
+            <div style={styles.empty}>
+              এই মাসে কোনো Task Complete হয়নি।
+            </div>
 
-      {/* =========================
-          UNCOMPLETE EMPLOYEE REPORT
-      ========================= */}
+          ) : (
 
-      <div style={sectionStyle}>
+            <div style={styles.tableWrapper}>
 
-        <h2 style={sectionTitle}>
-          👥 Uncomplete Task by Employee
-        </h2>
+              <table style={styles.table}>
 
-        <p style={employeeSubtitle}>
-          কে কতগুলো কাজ এখনো শেষ করেনি
-        </p>
+                <thead>
+                  <tr>
 
-        {uncompleteEmployees.length === 0 ? (
+                    <th style={styles.th}>
+                      Task
+                    </th>
 
-          <div style={successBox}>
-            🎉 সব Employee-এর সব Task Complete!
+                    <th style={styles.th}>
+                      Employee
+                    </th>
+
+                    <th style={styles.th}>
+                      Quantity
+                    </th>
+
+                    <th style={styles.th}>
+                      Deadline
+                    </th>
+
+                  </tr>
+                </thead>
+
+                <tbody>
+
+                  {monthData.completedTasks.map(
+                    (task) => (
+
+                      <tr key={task.id}>
+
+                        <td style={styles.td}>
+                          <strong>
+                            {task.task_name}
+                          </strong>
+                        </td>
+
+                        <td style={styles.td}>
+                          {task.assigned_to ||
+                            "Unassigned"}
+                        </td>
+
+                        <td style={styles.td}>
+                          {Number(
+                            task.completed_quantity ||
+                              0
+                          )}{" "}
+                          /{" "}
+                          {Number(
+                            task.total_quantity ||
+                              0
+                          )}
+                        </td>
+
+                        <td style={styles.td}>
+                          {task.deadline ||
+                            "-"}
+                        </td>
+
+                      </tr>
+
+                    )
+                  )}
+
+                </tbody>
+
+              </table>
+
+            </div>
+
+          )}
+
+        </section>
+
+        {/* =========================
+            UNCOMPLETE TASKS
+        ========================= */}
+
+        <section style={styles.panel}>
+
+          <div style={styles.sectionHeader}>
+
+            <div>
+              <h2 style={styles.sectionTitle}>
+                🟠 {monthLabel(
+                  selectedMonth
+                )} — Uncomplete Tasks
+              </h2>
+
+              <p style={styles.sectionSubtitle}>
+                মাস শেষ হওয়ার সময় যেসব কাজ
+                Complete হয়নি
+              </p>
+            </div>
+
+            <span
+              style={styles.pendingBadge}
+            >
+              {monthData.uncompleteTasks.length}
+            </span>
+
           </div>
 
-        ) : (
+          {monthData.uncompleteTasks.length ===
+          0 ? (
 
-          uncompleteEmployees.map(
-            ([name, count]) => (
+            <div style={styles.successBox}>
+              🎉 এই মাসে কোনো Uncomplete Task নেই।
+            </div>
 
-              <div
-                key={name}
-                style={employeeRow}
-              >
+          ) : (
 
-                <strong>
-                  {name}
-                </strong>
+            <div style={styles.tableWrapper}>
 
-                <span
-                  style={employeePendingCount}
-                >
-                  {count} Task বাকি
-                </span>
+              <table style={styles.table}>
 
-              </div>
+                <thead>
+                  <tr>
 
-            )
-          )
+                    <th style={styles.th}>
+                      Task
+                    </th>
 
-        )}
+                    <th style={styles.th}>
+                      Employee
+                    </th>
 
-      </div>
+                    <th style={styles.th}>
+                      Status
+                    </th>
 
-      {/* =========================
-          COMPLETED EMPLOYEE REPORT
-      ========================= */}
+                    <th style={styles.th}>
+                      Deadline
+                    </th>
 
-      <div style={sectionStyle}>
+                  </tr>
+                </thead>
 
-        <h2 style={sectionTitle}>
-          ✅ Completed Task by Employee
-        </h2>
+                <tbody>
 
-        <p style={employeeSubtitle}>
-          কে কতগুলো কাজ Complete করেছে
-        </p>
+                  {monthData.uncompleteTasks.map(
+                    (task) => {
 
-        {completedEmployees.length === 0 ? (
+                      const snapshot =
+                        getTaskSnapshot(
+                          task,
+                          getMonthEnd(
+                            selectedMonth
+                          )
+                        );
 
-          <p style={emptyStyle}>
-            এখনো কোনো Completed Task নেই।
+                      return (
+                        <tr key={task.id}>
+
+                          <td style={styles.td}>
+                            <strong>
+                              {task.task_name}
+                            </strong>
+                          </td>
+
+                          <td style={styles.td}>
+                            {task.assigned_to ||
+                              "Unassigned"}
+                          </td>
+
+                          <td style={styles.td}>
+
+                            <span
+                              style={
+                                styles.statusBadge
+                              }
+                            >
+                              {snapshot.status ||
+                                "Pending"}
+                            </span>
+
+                          </td>
+
+                          <td style={styles.td}>
+                            {task.deadline ||
+                              "-"}
+                          </td>
+
+                        </tr>
+                      );
+                    }
+                  )}
+
+                </tbody>
+
+              </table>
+
+            </div>
+
+          )}
+
+        </section>
+
+        {/* =========================
+            CARRYOVER
+        ========================= */}
+
+        <section style={styles.carryoverPanel}>
+
+          <div style={styles.sectionHeader}>
+
+            <div>
+
+              <h2 style={styles.sectionTitle}>
+                🔴 Previous Month Carryover
+              </h2>
+
+              <p style={styles.sectionSubtitle}>
+                {monthLabel(
+                  selectedMonth
+                )} শুরু হওয়ার আগেই যেসব কাজ
+                Pending ছিল
+              </p>
+
+            </div>
+
+            <span
+              style={styles.carryoverBadge}
+            >
+              {monthData.carryoverTasks.length}
+            </span>
+
+          </div>
+
+          {monthData.carryoverTasks.length ===
+          0 ? (
+
+            <div style={styles.successBox}>
+              ✅ আগের মাস থেকে কোনো Pending
+              Task Carryover হয়নি।
+            </div>
+
+          ) : (
+
+            <div style={styles.tableWrapper}>
+
+              <table style={styles.table}>
+
+                <thead>
+                  <tr>
+
+                    <th style={styles.th}>
+                      Task
+                    </th>
+
+                    <th style={styles.th}>
+                      Employee
+                    </th>
+
+                    <th style={styles.th}>
+                      Deadline
+                    </th>
+
+                  </tr>
+                </thead>
+
+                <tbody>
+
+                  {monthData.carryoverTasks.map(
+                    (task) => (
+
+                      <tr key={task.id}>
+
+                        <td style={styles.td}>
+                          <strong>
+                            {task.task_name}
+                          </strong>
+                        </td>
+
+                        <td style={styles.td}>
+                          {task.assigned_to ||
+                            "Unassigned"}
+                        </td>
+
+                        <td style={styles.td}>
+                          {task.deadline ||
+                            "-"}
+                        </td>
+
+                      </tr>
+
+                    )
+                  )}
+
+                </tbody>
+
+              </table>
+
+            </div>
+
+          )}
+
+        </section>
+
+        {/* =========================
+            EMPLOYEE PENDING
+        ========================= */}
+
+        <section style={styles.panel}>
+
+          <h2 style={styles.sectionTitle}>
+            👥 Employee-wise Uncomplete Task
+          </h2>
+
+          <p style={styles.sectionSubtitle}>
+            {monthLabel(
+              selectedMonth
+            )} অনুযায়ী Employee-এর বাকি কাজ
           </p>
 
-        ) : (
+          {employeePending.length ===
+          0 ? (
 
-          completedEmployees.map(
-            ([name, count]) => (
+            <div style={styles.successBox}>
+              🎉 কোনো Uncomplete Task নেই।
+            </div>
 
-              <div
-                key={name}
-                style={employeeRow}
-              >
+          ) : (
 
-                <strong>
-                  {name}
-                </strong>
+            employeePending.map(
+              ([employee, count]) => (
 
-                <span
-                  style={employeeCompletedCount}
+                <div
+                  key={employee}
+                  style={styles.employeeRow}
                 >
-                  {count} Task Complete
-                </span>
-
-              </div>
-
-            )
-          )
-
-        )}
-
-      </div>
-
-      {/* RECENT TASKS */}
-      <div style={sectionStyle}>
-
-        <h2 style={sectionTitle}>
-          📝 Recent Tasks
-        </h2>
-
-        {tasks.length === 0 ? (
-
-          <p style={emptyStyle}>
-            এখনো কোনো office task নেই।
-          </p>
-
-        ) : (
-
-          tasks.slice(0, 10).map(
-            (task) => (
-
-              <div
-                key={task.id}
-                style={taskRow}
-              >
-
-                <div>
 
                   <strong>
-                    {task.task_name}
+                    {employee}
                   </strong>
 
-                  <div style={smallText}>
-                    👤{" "}
-                    {task.assigned_to ||
-                      "Unassigned"}
-                  </div>
+                  <span
+                    style={
+                      styles.employeePending
+                    }
+                  >
+                    {count} Task বাকি
+                  </span>
 
                 </div>
 
-                <div style={taskRight}>
-
-                  <div style={statusStyle}>
-
-                    {isCompleted(task)
-                      ? "Completed"
-                      : task.status}
-
-                  </div>
-
-                  <div style={smallText}>
-
-                    📦{" "}
-                    {task.completed_quantity ||
-                      0}
-
-                    {" / "}
-
-                    {task.total_quantity ||
-                      0}
-
-                  </div>
-
-                </div>
-
-              </div>
-
+              )
             )
-          )
 
-        )}
+          )}
+
+        </section>
+
+        {/* =========================
+            EMPLOYEE COMPLETED
+        ========================= */}
+
+        <section style={styles.panel}>
+
+          <h2 style={styles.sectionTitle}>
+            ✅ Employee-wise Completed Task
+          </h2>
+
+          <p style={styles.sectionSubtitle}>
+            {monthLabel(
+              selectedMonth
+            )} অনুযায়ী Employee-এর Complete
+            কাজ
+          </p>
+
+          {employeeCompleted.length ===
+          0 ? (
+
+            <div style={styles.empty}>
+              এই মাসে কোনো Completed Task নেই।
+            </div>
+
+          ) : (
+
+            employeeCompleted.map(
+              ([employee, count]) => (
+
+                <div
+                  key={employee}
+                  style={styles.employeeRow}
+                >
+
+                  <strong>
+                    {employee}
+                  </strong>
+
+                  <span
+                    style={
+                      styles.employeeCompleted
+                    }
+                  >
+                    {count} Task Complete
+                  </span>
+
+                </div>
+
+              )
+            )
+
+          )}
+
+        </section>
+
+        {/* =========================
+            STATUS REPORT
+        ========================= */}
+
+        <section style={styles.panel}>
+
+          <h2 style={styles.sectionTitle}>
+            📊 {monthLabel(
+              selectedMonth
+            )} Status Report
+          </h2>
+
+          <ReportRow
+            label="⏳ Pending"
+            value={summary.pending}
+            total={summary.totalTasks}
+          />
+
+          <ReportRow
+            label="⚙️ In Progress"
+            value={summary.inProgress}
+            total={summary.totalTasks}
+          />
+
+          <ReportRow
+            label="✅ Completed"
+            value={summary.completed}
+            total={summary.totalTasks}
+          />
+
+          <ReportRow
+            label="⚠️ Overdue"
+            value={summary.overdue}
+            total={summary.totalTasks}
+          />
+
+        </section>
+
+        {/* =========================
+            QUANTITY PROGRESS
+        ========================= */}
+
+        <section style={styles.panel}>
+
+          <div
+            style={styles.sectionHeader}
+          >
+
+            <h2 style={styles.sectionTitle}>
+              📦 Quantity Progress
+            </h2>
+
+            <strong>
+              {summary.progress}%
+            </strong>
+
+          </div>
+
+          <div
+            style={
+              styles.progressBackground
+            }
+          >
+
+            <div
+              style={{
+                ...styles.progressBar,
+                width: `${summary.progress}%`,
+              }}
+            />
+
+          </div>
+
+          <p style={styles.smallText}>
+            Completed{" "}
+            {summary.completedQuantity} /{" "}
+            {summary.totalQuantity} quantity
+          </p>
+
+        </section>
 
       </div>
-
     </main>
   );
 }
@@ -604,23 +1272,23 @@ function StatCard({
   icon,
 }: {
   title: string;
-  value: number;
+  value: number | string;
   icon: string;
 }) {
   return (
-    <div style={cardStyle}>
+    <div style={styles.card}>
 
-      <div style={iconStyle}>
+      <div style={styles.icon}>
         {icon}
       </div>
 
       <div>
 
-        <div style={cardTitle}>
+        <div style={styles.cardLabel}>
           {title}
         </div>
 
-        <div style={cardValue}>
+        <div style={styles.cardNumber}>
           {value}
         </div>
 
@@ -651,9 +1319,11 @@ function ReportRow({
       : 0;
 
   return (
-    <div style={reportRow}>
+    <div style={styles.reportRow}>
 
-      <div style={reportTop}>
+      <div
+        style={styles.reportHeader}
+      >
 
         <strong>
           {label}
@@ -665,11 +1335,15 @@ function ReportRow({
 
       </div>
 
-      <div style={reportBackground}>
+      <div
+        style={
+          styles.reportBackground
+        }
+      >
 
         <div
           style={{
-            ...reportBar,
+            ...styles.reportBar,
             width: `${percent}%`,
           }}
         />
@@ -684,223 +1358,314 @@ function ReportRow({
    STYLES
 ========================= */
 
-const pageStyle = {
-  padding: "30px",
-  maxWidth: "1400px",
-  margin: "0 auto",
-};
+const styles: Record<
+  string,
+  React.CSSProperties
+> = {
 
-const headerStyle = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  marginBottom: "25px",
-  gap: "15px",
-};
+  page: {
+    minHeight: "100vh",
+    background: "#f5f7fb",
+    padding: "30px 20px",
+  },
 
-const titleStyle = {
-  fontSize: "30px",
-  fontWeight: "700",
-  margin: 0,
-};
+  container: {
+    maxWidth: "1400px",
+    margin: "0 auto",
+  },
 
-const subtitleStyle = {
-  color: "#666",
-  marginTop: "6px",
-};
+  header: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: "20px",
+    marginBottom: "25px",
+    flexWrap: "wrap",
+  },
 
-const refreshButtonStyle = {
-  background: "#111",
-  color: "#fff",
-  border: "none",
-  padding: "11px 18px",
-  borderRadius: "8px",
-  cursor: "pointer",
-};
+  title: {
+    margin: 0,
+    fontSize: "30px",
+    fontWeight: 800,
+  },
 
-const gridStyle = {
-  display: "grid",
-  gridTemplateColumns:
-    "repeat(auto-fit, minmax(190px, 1fr))",
-  gap: "16px",
-  marginBottom: "25px",
-};
+  subtitle: {
+    marginTop: "6px",
+    color: "#667085",
+  },
 
-const cardStyle = {
-  background: "#fff",
-  border: "1px solid #e5e5e5",
-  borderRadius: "12px",
-  padding: "20px",
-  display: "flex",
-  alignItems: "center",
-  gap: "15px",
-};
+  refreshButton: {
+    border: "none",
+    background: "#111827",
+    color: "#fff",
+    padding: "11px 18px",
+    borderRadius: "9px",
+    cursor: "pointer",
+    fontWeight: 600,
+  },
 
-const iconStyle = {
-  fontSize: "30px",
-};
+  monthPanel: {
+    background: "#fff",
+    padding: "20px",
+    borderRadius: "14px",
+    marginBottom: "12px",
+    boxShadow:
+      "0 4px 15px rgba(0,0,0,0.05)",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: "20px",
+    flexWrap: "wrap",
+  },
 
-const cardTitle = {
-  fontSize: "14px",
-  color: "#666",
-};
+  monthTitle: {
+    margin: 0,
+    fontSize: "21px",
+  },
 
-const cardValue = {
-  fontSize: "28px",
-  fontWeight: "700",
-  marginTop: "3px",
-};
+  monthSubtitle: {
+    margin: "5px 0 0",
+    color: "#667085",
+    fontSize: "13px",
+  },
 
-const sectionStyle = {
-  background: "#fff",
-  border: "1px solid #e5e5e5",
-  borderRadius: "12px",
-  padding: "22px",
-  marginBottom: "22px",
-};
+  monthSelect: {
+    minWidth: "220px",
+    padding: "12px",
+    border:
+      "1px solid #d0d5dd",
+    borderRadius: "9px",
+    background: "#fff",
+    fontSize: "14px",
+    fontWeight: 600,
+  },
 
-const sectionTitle = {
-  marginTop: 0,
-  marginBottom: "10px",
-  fontSize: "20px",
-};
+  selectedMonthBadge: {
+    background: "#eef2ff",
+    color: "#3730a3",
+    padding: "10px 15px",
+    borderRadius: "9px",
+    marginBottom: "20px",
+    display: "inline-block",
+  },
 
-const employeeSubtitle = {
-  color: "#777",
-  fontSize: "14px",
-  marginTop: 0,
-  marginBottom: "15px",
-};
+  cards: {
+    display: "grid",
+    gridTemplateColumns:
+      "repeat(auto-fit, minmax(210px, 1fr))",
+    gap: "15px",
+    marginBottom: "25px",
+  },
 
-const reportRow = {
-  marginBottom: "18px",
-};
+  card: {
+    background: "#fff",
+    borderRadius: "14px",
+    padding: "20px",
+    display: "flex",
+    alignItems: "center",
+    gap: "15px",
+    boxShadow:
+      "0 4px 15px rgba(0,0,0,0.05)",
+  },
 
-const reportTop = {
-  display: "flex",
-  justifyContent: "space-between",
-  marginBottom: "7px",
-  fontSize: "14px",
-};
+  icon: {
+    fontSize: "30px",
+  },
 
-const reportBackground = {
-  width: "100%",
-  height: "10px",
-  background: "#eee",
-  borderRadius: "20px",
-  overflow: "hidden" as const,
-};
+  cardLabel: {
+    color: "#667085",
+    fontSize: "13px",
+  },
 
-const reportBar = {
-  height: "100%",
-  background: "#111",
-  borderRadius: "20px",
-};
+  cardNumber: {
+    fontSize: "26px",
+    fontWeight: 800,
+    marginTop: "4px",
+  },
 
-const progressBackground = {
-  width: "100%",
-  height: "18px",
-  background: "#eee",
-  borderRadius: "20px",
-  overflow: "hidden" as const,
-};
+  panel: {
+    background: "#fff",
+    padding: "22px",
+    borderRadius: "14px",
+    marginBottom: "25px",
+    boxShadow:
+      "0 4px 15px rgba(0,0,0,0.05)",
+  },
 
-const progressBar = {
-  height: "100%",
-  background: "#111",
-  borderRadius: "20px",
-  transition: "width 0.4s ease",
-};
+  carryoverPanel: {
+    background: "#fff7ed",
+    padding: "22px",
+    borderRadius: "14px",
+    marginBottom: "25px",
+    border: "1px solid #fed7aa",
+  },
 
-const progressText = {
-  marginBottom: 0,
-  color: "#555",
-  fontWeight: "600",
-};
+  sectionHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: "15px",
+    marginBottom: "15px",
+  },
 
-const overdueRow = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  gap: "15px",
-  padding: "15px",
-  marginBottom: "10px",
-  border: "1px solid #eee",
-  borderRadius: "10px",
-};
+  sectionTitle: {
+    margin: 0,
+    fontSize: "20px",
+    fontWeight: 800,
+  },
 
-const overdueRight = {
-  textAlign: "right" as const,
-};
+  sectionSubtitle: {
+    margin: "5px 0 0",
+    color: "#667085",
+    fontSize: "13px",
+  },
 
-const overdueBadge = {
-  background: "#fee2e2",
-  color: "#991b1b",
-  padding: "5px 9px",
-  borderRadius: "6px",
-  fontSize: "11px",
-  fontWeight: "700",
-};
+  completedBadge: {
+    background: "#dcfce7",
+    color: "#166534",
+    padding: "7px 13px",
+    borderRadius: "20px",
+    fontWeight: 700,
+  },
 
-const successBox = {
-  background: "#ecfdf5",
-  padding: "15px",
-  borderRadius: "8px",
-  color: "#166534",
-};
+  pendingBadge: {
+    background: "#fef3c7",
+    color: "#92400e",
+    padding: "7px 13px",
+    borderRadius: "20px",
+    fontWeight: 700,
+  },
 
-const employeeRow = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  padding: "13px 0",
-  borderBottom: "1px solid #eee",
-};
+  carryoverBadge: {
+    background: "#fee2e2",
+    color: "#991b1b",
+    padding: "7px 13px",
+    borderRadius: "20px",
+    fontWeight: 700,
+  },
 
-const employeePendingCount = {
-  background: "#fff7ed",
-  color: "#c2410c",
-  padding: "6px 12px",
-  borderRadius: "20px",
-  fontSize: "13px",
-  fontWeight: "600",
-};
+  successBox: {
+    background: "#ecfdf3",
+    color: "#166534",
+    padding: "15px",
+    borderRadius: "9px",
+    fontWeight: 600,
+  },
 
-const employeeCompletedCount = {
-  background: "#dcfce7",
-  color: "#166534",
-  padding: "6px 12px",
-  borderRadius: "20px",
-  fontSize: "13px",
-  fontWeight: "600",
-};
+  empty: {
+    color: "#667085",
+    textAlign: "center",
+    padding: "25px",
+  },
 
-const taskRow = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  gap: "15px",
-  padding: "15px 0",
-  borderBottom: "1px solid #eee",
-};
+  tableWrapper: {
+    overflowX: "auto",
+  },
 
-const taskRight = {
-  textAlign: "right" as const,
-};
+  table: {
+    width: "100%",
+    borderCollapse: "collapse",
+    minWidth: "700px",
+  },
 
-const statusStyle = {
-  fontWeight: "600",
-  marginBottom: "5px",
-};
+  th: {
+    textAlign: "left",
+    padding: "12px",
+    background: "#f9fafb",
+    borderBottom:
+      "1px solid #e5e7eb",
+    fontSize: "13px",
+    color: "#475467",
+  },
 
-const smallText = {
-  fontSize: "13px",
-  color: "#777",
-  marginTop: "4px",
-};
+  td: {
+    padding: "13px 12px",
+    borderBottom:
+      "1px solid #eee",
+    fontSize: "14px",
+  },
 
-const emptyStyle = {
-  textAlign: "center" as const,
-  padding: "30px",
-  color: "#777",
+  statusBadge: {
+    display: "inline-block",
+    background: "#fef3c7",
+    color: "#92400e",
+    padding: "5px 10px",
+    borderRadius: "15px",
+    fontSize: "12px",
+    fontWeight: 700,
+  },
+
+  employeeRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: "13px 0",
+    borderBottom:
+      "1px solid #eee",
+  },
+
+  employeePending: {
+    background: "#fff7ed",
+    color: "#c2410c",
+    padding: "6px 12px",
+    borderRadius: "20px",
+    fontSize: "13px",
+    fontWeight: 700,
+  },
+
+  employeeCompleted: {
+    background: "#dcfce7",
+    color: "#166534",
+    padding: "6px 12px",
+    borderRadius: "20px",
+    fontSize: "13px",
+    fontWeight: 700,
+  },
+
+  reportRow: {
+    marginBottom: "17px",
+  },
+
+  reportHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    marginBottom: "7px",
+    fontSize: "14px",
+  },
+
+  reportBackground: {
+    width: "100%",
+    height: "10px",
+    background: "#eaecf0",
+    borderRadius: "20px",
+    overflow: "hidden",
+  },
+
+  reportBar: {
+    height: "100%",
+    background: "#2563eb",
+    borderRadius: "20px",
+  },
+
+  progressBackground: {
+    width: "100%",
+    height: "16px",
+    background: "#eaecf0",
+    borderRadius: "20px",
+    overflow: "hidden",
+  },
+
+  progressBar: {
+    height: "100%",
+    background: "#16a34a",
+    borderRadius: "20px",
+    transition:
+      "width 0.3s ease",
+  },
+
+  smallText: {
+    color: "#667085",
+    fontSize: "13px",
+    marginTop: "10px",
+  },
 };
