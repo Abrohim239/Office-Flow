@@ -371,32 +371,68 @@ export default function DashboardPage() {
         );
       });
 
-    // Tasks from previous period which
-    // were still pending when month started
-    const carryoverTasks =
-      tasks.filter((task) => {
-        if (!task.created_at) {
-          return false;
-        }
+// Tasks from previous period which
+// were pending when selected month started
+// AND are still incomplete now
+const carryoverTasks =
+  tasks.filter((task) => {
+    if (!task.created_at) {
+      return false;
+    }
 
-        const createdDate =
-          task.created_at.slice(0, 10);
+    const createdDate =
+      task.created_at.slice(0, 10);
 
-        if (createdDate >= monthStart) {
-          return false;
-        }
+    // Task অবশ্যই selected month-এর আগে তৈরি হতে হবে
+    if (createdDate >= monthStart) {
+      return false;
+    }
 
-        const beforeMonthEndSnapshot =
-          getTaskSnapshot(
-            task,
-            getPreviousDay(monthStart)
-          );
+    // =====================================
+    // 1️⃣ Selected month শুরু হওয়ার আগের অবস্থা
+    // =====================================
 
-        return !snapshotIsCompleted(
-          task,
-          beforeMonthEndSnapshot
-        );
-      });
+    const previousMonthSnapshot =
+      getTaskSnapshot(
+        task,
+        getPreviousDay(monthStart)
+      );
+
+    // আগের মাসের শেষে যদি Complete থাকে,
+    // তাহলে Carryover হবে না
+    if (
+      snapshotIsCompleted(
+        task,
+        previousMonthSnapshot
+      )
+    ) {
+      return false;
+    }
+
+    // =====================================
+    // 2️⃣ Selected month-এর বর্তমান শেষ অবস্থা
+    // =====================================
+
+    const currentMonthSnapshot =
+      getTaskSnapshot(
+        task,
+        monthEnd
+      );
+
+    // ⭐ Task selected month-এর মধ্যে Complete
+    // হয়ে গেলে Carryover থেকে automatic বাদ যাবে
+    if (
+      snapshotIsCompleted(
+        task,
+        currentMonthSnapshot
+      )
+    ) {
+      return false;
+    }
+
+    // এখনো Complete হয়নি
+    return true;
+  });
 
     return {
       monthTasks,
