@@ -34,36 +34,13 @@ type Payment = {
   note: string | null;
 };
 
-const paymentStatuses = [
-  {
-    value: "Factory Pending",
-    label: "🏭 Factory Pending",
-  },
-  {
-    value: "Bank Acceptance Pending",
-    label: "🏦 Bank Acceptance Pending",
-  },
-  {
-    value: "LC Accepted",
-    label: "📄 LC Accepted",
-  },
-  {
-    value: "Purchase Done",
-    label: "🛒 Purchase Done",
-  },
-  {
-    value: "Payment Received",
-    label: "💰 Payment Received",
-  },
-  {
-    value: "Completed",
-    label: "✅ Completed",
-  },
-  {
-    value: "On Hold",
-    label: "⏸️ On Hold",
-  },
-];
+type PaymentHistory = {
+  id: string;
+  payment_id: string;
+  previous_status: string | null;
+  new_status: string;
+  created_at: string;
+};
 
 export default function AccountsPage() {
   const [clients, setClients] = useState<Client[]>([]);
@@ -72,13 +49,17 @@ export default function AccountsPage() {
 
   const [loading, setLoading] = useState(true);
 
-  const [showClientForm, setShowClientForm] =
-    useState(false);
+  const [showClientForm, setShowClientForm] = useState(false);
+  const [showBillForm, setShowBillForm] = useState(false);
+  const [showPaymentForm, setShowPaymentForm] = useState(false);
 
-  const [showBillForm, setShowBillForm] =
-    useState(false);
+  const [historyPayment, setHistoryPayment] =
+    useState<Payment | null>(null);
 
-  const [showPaymentForm, setShowPaymentForm] =
+  const [paymentHistory, setPaymentHistory] =
+    useState<PaymentHistory[]>([]);
+
+  const [historyLoading, setHistoryLoading] =
     useState(false);
 
   const [clientForm, setClientForm] = useState({
@@ -93,24 +74,23 @@ export default function AccountsPage() {
     bill_number: "",
     bill_amount: "",
     currency: "BDT",
-    bill_date: new Date()
-      .toISOString()
-      .split("T")[0],
+    bill_date: new Date().toISOString().split("T")[0],
     note: "",
   });
 
-  const [paymentForm, setPaymentForm] =
-    useState({
-      client_id: "",
-      amount: "",
-      currency: "BDT",
-      payment_date: new Date()
-        .toISOString()
-        .split("T")[0],
-      payment_method: "Cash",
-      payment_status: "Factory Pending",
-      note: "",
-    });
+  const [paymentForm, setPaymentForm] = useState({
+    client_id: "",
+    amount: "",
+    currency: "BDT",
+    payment_date: new Date().toISOString().split("T")[0],
+    payment_method: "Cash",
+    payment_status: "Factory Pending",
+    note: "",
+  });
+
+  // =====================================================
+  // LOAD DATA
+  // =====================================================
 
   async function loadData() {
     setLoading(true);
@@ -123,23 +103,17 @@ export default function AccountsPage() {
       supabase
         .from("client_accounts")
         .select("*")
-        .order("created_at", {
-          ascending: false,
-        }),
+        .order("created_at", { ascending: false }),
 
       supabase
         .from("client_bills")
         .select("*")
-        .order("bill_date", {
-          ascending: false,
-        }),
+        .order("bill_date", { ascending: false }),
 
       supabase
         .from("client_payments")
         .select("*")
-        .order("payment_date", {
-          ascending: false,
-        }),
+        .order("payment_date", { ascending: false }),
     ]);
 
     if (clientResult.error) {
@@ -165,13 +139,11 @@ export default function AccountsPage() {
     loadData();
   }, []);
 
-  // ==========================================
+  // =====================================================
   // ADD CLIENT
-  // ==========================================
+  // =====================================================
 
-  async function addClient(
-    e: React.FormEvent
-  ) {
+  async function addClient(e: React.FormEvent) {
     e.preventDefault();
 
     if (!clientForm.client_name.trim()) {
@@ -179,27 +151,18 @@ export default function AccountsPage() {
       return;
     }
 
-    const { data, error } =
-      await supabase.rpc(
-        "add_client_account",
-        {
-          p_client_name:
-            clientForm.client_name.trim(),
-          p_phone:
-            clientForm.phone.trim(),
-          p_address:
-            clientForm.address.trim(),
-          p_notes:
-            clientForm.notes.trim() ||
-            null,
-        }
-      );
+    const { data, error } = await supabase.rpc(
+      "add_client_account",
+      {
+        p_client_name: clientForm.client_name.trim(),
+        p_phone: clientForm.phone.trim(),
+        p_address: clientForm.address.trim(),
+        p_notes: clientForm.notes.trim() || null,
+      }
+    );
 
     if (error) {
-      alert(
-        "Client Add Error: " +
-          error.message
-      );
+      alert("Client Add Error: " + error.message);
       return;
     }
 
@@ -208,9 +171,7 @@ export default function AccountsPage() {
       return;
     }
 
-    alert(
-      "Client Added Successfully! 👤"
-    );
+    alert("Client Added Successfully! 👤");
 
     setClientForm({
       client_name: "",
@@ -224,13 +185,11 @@ export default function AccountsPage() {
     loadData();
   }
 
-  // ==========================================
+  // =====================================================
   // ADD BILL
-  // ==========================================
+  // =====================================================
 
-  async function addBill(
-    e: React.FormEvent
-  ) {
+  async function addBill(e: React.FormEvent) {
     e.preventDefault();
 
     if (!billForm.client_id) {
@@ -250,34 +209,22 @@ export default function AccountsPage() {
       .from("client_bills")
       .insert([
         {
-          client_id:
-            billForm.client_id,
+          client_id: billForm.client_id,
           bill_number:
-            billForm.bill_number.trim() ||
-            null,
-          bill_amount:
-            Number(billForm.bill_amount),
-          currency:
-            billForm.currency,
-          bill_date:
-            billForm.bill_date,
-          note:
-            billForm.note.trim() ||
-            null,
+            billForm.bill_number.trim() || null,
+          bill_amount: Number(billForm.bill_amount),
+          currency: billForm.currency,
+          bill_date: billForm.bill_date,
+          note: billForm.note.trim() || null,
         },
       ]);
 
     if (error) {
-      alert(
-        "Bill Add Error: " +
-          error.message
-      );
+      alert("Bill Add Error: " + error.message);
       return;
     }
 
-    alert(
-      "Bill Added Successfully! ✅"
-    );
+    alert("Bill Added Successfully! ✅");
 
     setBillForm({
       client_id: "",
@@ -295,13 +242,11 @@ export default function AccountsPage() {
     loadData();
   }
 
-  // ==========================================
+  // =====================================================
   // ADD PAYMENT
-  // ==========================================
+  // =====================================================
 
-  async function addPayment(
-    e: React.FormEvent
-  ) {
+  async function addPayment(e: React.FormEvent) {
     e.preventDefault();
 
     if (!paymentForm.client_id) {
@@ -317,39 +262,53 @@ export default function AccountsPage() {
       return;
     }
 
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("client_payments")
       .insert([
         {
-          client_id:
-            paymentForm.client_id,
-          amount:
-            Number(paymentForm.amount),
-          currency:
-            paymentForm.currency,
-          payment_date:
-            paymentForm.payment_date,
+          client_id: paymentForm.client_id,
+          amount: Number(paymentForm.amount),
+          currency: paymentForm.currency,
+          payment_date: paymentForm.payment_date,
           payment_method:
             paymentForm.payment_method,
           payment_status:
             paymentForm.payment_status,
           note:
-            paymentForm.note.trim() ||
-            null,
+            paymentForm.note.trim() || null,
         },
-      ]);
+      ])
+      .select()
+      .single();
 
     if (error) {
-      alert(
-        "Payment Add Error: " +
-          error.message
-      );
+      alert("Payment Add Error: " + error.message);
       return;
     }
 
-    alert(
-      "Payment Received Added! 💰"
-    );
+    // Initial payment status history
+    if (data) {
+      const { error: historyError } =
+        await supabase
+          .from("client_payment_history")
+          .insert([
+            {
+              payment_id: data.id,
+              previous_status: null,
+              new_status:
+                paymentForm.payment_status,
+            },
+          ]);
+
+      if (historyError) {
+        console.log(
+          "Payment history save error:",
+          historyError.message
+        );
+      }
+    }
+
+    alert("Payment Received Added! 💰");
 
     setPaymentForm({
       client_id: "",
@@ -359,8 +318,7 @@ export default function AccountsPage() {
         .toISOString()
         .split("T")[0],
       payment_method: "Cash",
-      payment_status:
-        "Factory Pending",
+      payment_status: "Factory Pending",
       note: "",
     });
 
@@ -369,41 +327,86 @@ export default function AccountsPage() {
     loadData();
   }
 
-  // ==========================================
+  // =====================================================
   // UPDATE PAYMENT STATUS
-  // ==========================================
+  // =====================================================
 
   async function updatePaymentStatus(
-    paymentId: string,
+    payment: Payment,
     newStatus: string
   ) {
-    const { error } =
-      await supabase
-        .from("client_payments")
-        .update({
-          payment_status:
-            newStatus,
-        })
-        .eq("id", paymentId);
+    if (
+      !newStatus ||
+      newStatus === payment.payment_status
+    ) {
+      return;
+    }
+
+    const { data, error } = await supabase.rpc(
+      "update_client_payment_status",
+      {
+        p_payment_id: payment.id,
+        p_new_status: newStatus,
+      }
+    );
 
     if (error) {
       alert(
-        "Status Update Error: " +
+        "Payment Status Update Error: " +
           error.message
       );
       return;
     }
 
+    if (!data) {
+      alert("Status update হয়নি।");
+      return;
+    }
+
+    alert("Payment Status Updated! ✅");
+
     loadData();
   }
 
-  // ==========================================
-  // DELETE CLIENT
-  // ==========================================
+  // =====================================================
+  // SHOW PAYMENT HISTORY
+  // =====================================================
 
-  async function deleteClient(
-    id: string
+  async function showPaymentHistory(
+    payment: Payment
   ) {
+    setHistoryPayment(payment);
+    setPaymentHistory([]);
+    setHistoryLoading(true);
+
+    const { data, error } = await supabase
+      .from("client_payment_history")
+      .select(
+        "id, payment_id, previous_status, new_status, created_at"
+      )
+      .eq("payment_id", payment.id)
+      .order("created_at", {
+        ascending: false,
+      });
+
+    setHistoryLoading(false);
+
+    if (error) {
+      alert(
+        "Payment History Error: " +
+          error.message
+      );
+      return;
+    }
+
+    setPaymentHistory(data || []);
+  }
+
+  // =====================================================
+  // DELETE CLIENT
+  // =====================================================
+
+  async function deleteClient(id: string) {
     if (
       !confirm(
         "এই Client এবং তার হিসাব Delete করতে চান?"
@@ -412,66 +415,48 @@ export default function AccountsPage() {
       return;
     }
 
-    const { error } =
-      await supabase
-        .from("client_accounts")
-        .delete()
-        .eq("id", id);
+    const { error } = await supabase
+      .from("client_accounts")
+      .delete()
+      .eq("id", id);
 
     if (error) {
-      alert(
-        "Delete Error: " +
-          error.message
-      );
+      alert("Delete Error: " + error.message);
       return;
     }
 
-    alert(
-      "Client Deleted! 🗑️"
-    );
+    alert("Client Deleted! 🗑️");
 
     loadData();
   }
 
-  // ==========================================
+  // =====================================================
   // DELETE BILL
-  // ==========================================
+  // =====================================================
 
-  async function deleteBill(
-    id: string
-  ) {
-    if (
-      !confirm(
-        "এই Bill Delete করতে চান?"
-      )
-    ) {
+  async function deleteBill(id: string) {
+    if (!confirm("এই Bill Delete করতে চান?")) {
       return;
     }
 
-    const { error } =
-      await supabase
-        .from("client_bills")
-        .delete()
-        .eq("id", id);
+    const { error } = await supabase
+      .from("client_bills")
+      .delete()
+      .eq("id", id);
 
     if (error) {
-      alert(
-        "Delete Error: " +
-          error.message
-      );
+      alert("Delete Error: " + error.message);
       return;
     }
 
     loadData();
   }
 
-  // ==========================================
+  // =====================================================
   // DELETE PAYMENT
-  // ==========================================
+  // =====================================================
 
-  async function deletePayment(
-    id: string
-  ) {
+  async function deletePayment(id: string) {
     if (
       !confirm(
         "এই Payment Entry Delete করতে চান?"
@@ -480,213 +465,150 @@ export default function AccountsPage() {
       return;
     }
 
-    const { error } =
-      await supabase
-        .from("client_payments")
-        .delete()
-        .eq("id", id);
+    const { error } = await supabase
+      .from("client_payments")
+      .delete()
+      .eq("id", id);
 
     if (error) {
-      alert(
-        "Delete Error: " +
-          error.message
-      );
+      alert("Delete Error: " + error.message);
       return;
     }
 
     loadData();
   }
 
-  // ==========================================
-  // CLIENT NAME
-  // ==========================================
+  // =====================================================
+  // HELPERS
+  // =====================================================
 
-  function getClientName(
-    id: string
-  ) {
+  function getClientName(id: string) {
     return (
       clients.find(
-        (client) =>
-          client.id === id
-      )?.client_name ||
-      "Unknown Client"
+        (client) => client.id === id
+      )?.client_name || "Unknown Client"
     );
   }
 
-  // ==========================================
-  // CURRENCY CALCULATIONS
-  // ==========================================
-
-  function getClientCurrencyTotal(
-    clientId: string,
-    currency: string
+  function getClientTotalBill(
+    clientId: string
   ) {
     return bills
       .filter(
         (bill) =>
-          bill.client_id ===
-            clientId &&
-          bill.currency ===
-            currency
+          bill.client_id === clientId
+      )
+      .filter(
+        (bill) =>
+          bill.currency === "BDT"
       )
       .reduce(
         (sum, bill) =>
           sum +
-          Number(
-            bill.bill_amount || 0
-          ),
+          Number(bill.bill_amount || 0),
         0
       );
   }
 
-  function getClientCurrencyReceived(
-    clientId: string,
-    currency: string
+  function getClientReceived(
+    clientId: string
   ) {
     return payments
       .filter(
         (payment) =>
-          payment.client_id ===
-            clientId &&
-          payment.currency ===
-            currency
+          payment.client_id === clientId
+      )
+      .filter(
+        (payment) =>
+          payment.currency === "BDT"
       )
       .reduce(
         (sum, payment) =>
-          sum +
-          Number(
-            payment.amount || 0
-          ),
+          sum + Number(payment.amount || 0),
         0
       );
   }
 
-  function getClientCurrencyDue(
-    clientId: string,
-    currency: string
+  function getClientDue(
+    clientId: string
   ) {
     return (
-      getClientCurrencyTotal(
-        clientId,
-        currency
-      ) -
-      getClientCurrencyReceived(
-        clientId,
-        currency
-      )
+      getClientTotalBill(clientId) -
+      getClientReceived(clientId)
     );
   }
 
-  // ==========================================
-  // BDT SUMMARY
-  // ==========================================
+  function getStatusStyle(
+    status: string | null
+  ) {
+    switch (status) {
+      case "Factory Pending":
+        return styles.statusFactory;
 
-  const totalBillBDT =
-    bills
-      .filter(
-        (bill) =>
-          bill.currency ===
-          "BDT"
-      )
-      .reduce(
-        (sum, bill) =>
-          sum +
-          Number(
-            bill.bill_amount || 0
-          ),
-        0
-      );
+      case "LC Accepted":
+        return styles.statusAccepted;
 
-  const totalReceivedBDT =
-    payments
-      .filter(
-        (payment) =>
-          payment.currency ===
-          "BDT"
-      )
-      .reduce(
-        (sum, payment) =>
-          sum +
-          Number(
-            payment.amount || 0
-          ),
-        0
-      );
+      case "Purchase Done":
+        return styles.statusPurchase;
+
+      case "On Hold":
+        return styles.statusHold;
+
+      case "Payment Received":
+        return styles.statusReceived;
+
+      default:
+        return styles.statusDefault;
+    }
+  }
+
+  const totalBillBDT = bills
+    .filter(
+      (bill) => bill.currency === "BDT"
+    )
+    .reduce(
+      (sum, bill) =>
+        sum + Number(bill.bill_amount || 0),
+      0
+    );
+
+  const totalReceivedBDT = payments
+    .filter(
+      (payment) =>
+        payment.currency === "BDT"
+    )
+    .reduce(
+      (sum, payment) =>
+        sum + Number(payment.amount || 0),
+      0
+    );
 
   const totalDueBDT =
-    totalBillBDT -
-    totalReceivedBDT;
+    totalBillBDT - totalReceivedBDT;
 
-  // ==========================================
-  // USD SUMMARY
-  // ==========================================
-
-  const totalBillUSD =
-    bills
-      .filter(
-        (bill) =>
-          bill.currency ===
-          "USD"
-      )
-      .reduce(
-        (sum, bill) =>
-          sum +
-          Number(
-            bill.bill_amount || 0
-          ),
-        0
-      );
-
-  const totalReceivedUSD =
-    payments
-      .filter(
-        (payment) =>
-          payment.currency ===
-          "USD"
-      )
-      .reduce(
-        (sum, payment) =>
-          sum +
-          Number(
-            payment.amount || 0
-          ),
-        0
-      );
-
-  const totalDueUSD =
-    totalBillUSD -
-    totalReceivedUSD;
+  // =====================================================
+  // UI
+  // =====================================================
 
   return (
     <main style={styles.page}>
       <div style={styles.container}>
 
-        {/* =================================
-            HEADER
-        ================================= */}
+        {/* HEADER */}
 
         <div style={styles.header}>
-
           <div>
-            <h1
-              style={styles.title}
-            >
+            <h1 style={styles.title}>
               💰 Client Accounts
             </h1>
 
-            <p
-              style={styles.subtitle}
-            >
-              Client Bill, Payment
-              & Due Management
+            <p style={styles.subtitle}>
+              Client Bill, Payment & Due
+              Management
             </p>
           </div>
 
-          <div
-            style={
-              styles.headerButtons
-            }
-          >
+          <div style={styles.headerButtons}>
 
             <button
               onClick={() =>
@@ -694,9 +616,7 @@ export default function AccountsPage() {
                   !showClientForm
                 )
               }
-              style={
-                styles.primaryButton
-              }
+              style={styles.primaryButton}
             >
               + Add Client
             </button>
@@ -707,9 +627,7 @@ export default function AccountsPage() {
                   !showBillForm
                 )
               }
-              style={
-                styles.secondaryButton
-              }
+              style={styles.secondaryButton}
             >
               + Add Bill
             </button>
@@ -720,204 +638,97 @@ export default function AccountsPage() {
                   !showPaymentForm
                 )
               }
-              style={
-                styles.successButton
-              }
+              style={styles.successButton}
             >
               + Payment Received
             </button>
 
           </div>
-
         </div>
 
-        {/* =================================
-            SUMMARY
-        ================================= */}
+        {/* SUMMARY */}
 
-        <div
-          style={
-            styles.summaryGrid
-          }
-        >
+        <div style={styles.summaryGrid}>
 
           <div style={styles.card}>
-
-            <div
-              style={
-                styles.cardIcon
-              }
-            >
+            <div style={styles.cardIcon}>
               👥
             </div>
 
             <div>
-              <div
-                style={
-                  styles.cardLabel
-                }
-              >
+              <div style={styles.cardLabel}>
                 Total Clients
               </div>
 
-              <div
-                style={
-                  styles.cardValue
-                }
-              >
+              <div style={styles.cardValue}>
                 {clients.length}
               </div>
             </div>
-
           </div>
 
           <div style={styles.card}>
-
-            <div
-              style={
-                styles.cardIcon
-              }
-            >
+            <div style={styles.cardIcon}>
               🧾
             </div>
 
             <div>
-
-              <div
-                style={
-                  styles.cardLabel
-                }
-              >
+              <div style={styles.cardLabel}>
                 Total Bill
               </div>
 
-              <div
-                style={
-                  styles.currencySummary
-                }
-              >
-                <div>
-                  ৳
-                  {totalBillBDT.toLocaleString()}
-                </div>
-
-                <div>
-                  $
-                  {totalBillUSD.toLocaleString()}
-                </div>
+              <div style={styles.cardValue}>
+                ৳{totalBillBDT.toLocaleString()}
               </div>
-
             </div>
-
           </div>
 
           <div style={styles.card}>
-
-            <div
-              style={
-                styles.cardIcon
-              }
-            >
+            <div style={styles.cardIcon}>
               💰
             </div>
 
             <div>
-
-              <div
-                style={
-                  styles.cardLabel
-                }
-              >
+              <div style={styles.cardLabel}>
                 Total Received
               </div>
 
-              <div
-                style={
-                  styles.currencySummary
-                }
-              >
-                <div>
-                  ৳
-                  {totalReceivedBDT.toLocaleString()}
-                </div>
-
-                <div>
-                  $
-                  {totalReceivedUSD.toLocaleString()}
-                </div>
+              <div style={styles.cardValue}>
+                ৳
+                {totalReceivedBDT.toLocaleString()}
               </div>
-
             </div>
-
           </div>
 
           <div style={styles.card}>
-
-            <div
-              style={
-                styles.cardIcon
-              }
-            >
+            <div style={styles.cardIcon}>
               ⚠️
             </div>
 
             <div>
-
-              <div
-                style={
-                  styles.cardLabel
-                }
-              >
+              <div style={styles.cardLabel}>
                 Total Due
               </div>
 
-              <div
-                style={
-                  styles.currencyDueSummary
-                }
-              >
-                <div>
-                  ৳
-                  {totalDueBDT.toLocaleString()}
-                </div>
-
-                <div>
-                  $
-                  {totalDueUSD.toLocaleString()}
-                </div>
+              <div style={styles.dueValue}>
+                ৳{totalDueBDT.toLocaleString()}
               </div>
-
             </div>
-
           </div>
 
         </div>
 
-        {/* =================================
-            ADD CLIENT
-        ================================= */}
+        {/* ADD CLIENT */}
 
         {showClientForm && (
           <form
             onSubmit={addClient}
-            style={
-              styles.formCard
-            }
+            style={styles.formCard}
           >
-
-            <h2
-              style={
-                styles.formTitle
-              }
-            >
+            <h2 style={styles.formTitle}>
               Add New Client
             </h2>
 
-            <div
-              style={
-                styles.formGrid
-              }
-            >
+            <div style={styles.formGrid}>
 
               <input
                 placeholder="Client Name *"
@@ -931,26 +742,19 @@ export default function AccountsPage() {
                       e.target.value,
                   })
                 }
-                style={
-                  styles.input
-                }
+                style={styles.input}
               />
 
               <input
                 placeholder="Phone"
-                value={
-                  clientForm.phone
-                }
+                value={clientForm.phone}
                 onChange={(e) =>
                   setClientForm({
                     ...clientForm,
-                    phone:
-                      e.target.value,
+                    phone: e.target.value,
                   })
                 }
-                style={
-                  styles.input
-                }
+                style={styles.input}
               />
 
               <input
@@ -965,72 +769,47 @@ export default function AccountsPage() {
                       e.target.value,
                   })
                 }
-                style={
-                  styles.input
-                }
+                style={styles.input}
               />
 
               <input
                 placeholder="Notes"
-                value={
-                  clientForm.notes
-                }
+                value={clientForm.notes}
                 onChange={(e) =>
                   setClientForm({
                     ...clientForm,
-                    notes:
-                      e.target.value,
+                    notes: e.target.value,
                   })
                 }
-                style={
-                  styles.input
-                }
+                style={styles.input}
               />
 
             </div>
 
             <button
               type="submit"
-              style={
-                styles.primaryButton
-              }
+              style={styles.primaryButton}
             >
               Save Client
             </button>
-
           </form>
         )}
 
-        {/* =================================
-            ADD BILL
-        ================================= */}
+        {/* ADD BILL */}
 
         {showBillForm && (
           <form
             onSubmit={addBill}
-            style={
-              styles.formCard
-            }
+            style={styles.formCard}
           >
-
-            <h2
-              style={
-                styles.formTitle
-              }
-            >
+            <h2 style={styles.formTitle}>
               🧾 Add Client Bill
             </h2>
 
-            <div
-              style={
-                styles.formGrid
-              }
-            >
+            <div style={styles.formGrid}>
 
               <select
-                value={
-                  billForm.client_id
-                }
+                value={billForm.client_id}
                 onChange={(e) =>
                   setBillForm({
                     ...billForm,
@@ -1038,28 +817,20 @@ export default function AccountsPage() {
                       e.target.value,
                   })
                 }
-                style={
-                  styles.input
-                }
+                style={styles.input}
               >
-
                 <option value="">
                   -- Select Client --
                 </option>
 
-                {clients.map(
-                  (client) => (
-                    <option
-                      key={client.id}
-                      value={client.id}
-                    >
-                      {
-                        client.client_name
-                      }
-                    </option>
-                  )
-                )}
-
+                {clients.map((client) => (
+                  <option
+                    key={client.id}
+                    value={client.id}
+                  >
+                    {client.client_name}
+                  </option>
+                ))}
               </select>
 
               <input
@@ -1074,9 +845,7 @@ export default function AccountsPage() {
                       e.target.value,
                   })
                 }
-                style={
-                  styles.input
-                }
+                style={styles.input}
               />
 
               <input
@@ -1092,15 +861,11 @@ export default function AccountsPage() {
                       e.target.value,
                   })
                 }
-                style={
-                  styles.input
-                }
+                style={styles.input}
               />
 
               <select
-                value={
-                  billForm.currency
-                }
+                value={billForm.currency}
                 onChange={(e) =>
                   setBillForm({
                     ...billForm,
@@ -1108,11 +873,8 @@ export default function AccountsPage() {
                       e.target.value,
                   })
                 }
-                style={
-                  styles.input
-                }
+                style={styles.input}
               >
-
                 <option value="BDT">
                   BDT (৳)
                 </option>
@@ -1120,14 +882,11 @@ export default function AccountsPage() {
                 <option value="USD">
                   USD ($)
                 </option>
-
               </select>
 
               <input
                 type="date"
-                value={
-                  billForm.bill_date
-                }
+                value={billForm.bill_date}
                 onChange={(e) =>
                   setBillForm({
                     ...billForm,
@@ -1135,69 +894,44 @@ export default function AccountsPage() {
                       e.target.value,
                   })
                 }
-                style={
-                  styles.input
-                }
+                style={styles.input}
               />
 
               <input
                 placeholder="Note"
-                value={
-                  billForm.note
-                }
+                value={billForm.note}
                 onChange={(e) =>
                   setBillForm({
                     ...billForm,
-                    note:
-                      e.target.value,
+                    note: e.target.value,
                   })
                 }
-                style={
-                  styles.input
-                }
+                style={styles.input}
               />
 
             </div>
 
             <button
               type="submit"
-              style={
-                styles.secondaryButton
-              }
+              style={styles.secondaryButton}
             >
               Save Bill
             </button>
-
           </form>
         )}
 
-        {/* =================================
-            PAYMENT FORM
-        ================================= */}
+        {/* ADD PAYMENT */}
 
         {showPaymentForm && (
           <form
             onSubmit={addPayment}
-            style={
-              styles.formCard
-            }
+            style={styles.formCard}
           >
-
-            <h2
-              style={
-                styles.formTitle
-              }
-            >
+            <h2 style={styles.formTitle}>
               💰 Add Payment Received
             </h2>
 
-            <div
-              style={
-                styles.formGrid
-              }
-            >
-
-              {/* CLIENT */}
+            <div style={styles.formGrid}>
 
               <select
                 value={
@@ -1210,31 +944,21 @@ export default function AccountsPage() {
                       e.target.value,
                   })
                 }
-                style={
-                  styles.input
-                }
+                style={styles.input}
               >
-
                 <option value="">
                   -- Select Client --
                 </option>
 
-                {clients.map(
-                  (client) => (
-                    <option
-                      key={client.id}
-                      value={client.id}
-                    >
-                      {
-                        client.client_name
-                      }
-                    </option>
-                  )
-                )}
-
+                {clients.map((client) => (
+                  <option
+                    key={client.id}
+                    value={client.id}
+                  >
+                    {client.client_name}
+                  </option>
+                ))}
               </select>
-
-              {/* AMOUNT */}
 
               <input
                 type="number"
@@ -1249,12 +973,8 @@ export default function AccountsPage() {
                       e.target.value,
                   })
                 }
-                style={
-                  styles.input
-                }
+                style={styles.input}
               />
-
-              {/* CURRENCY */}
 
               <select
                 value={
@@ -1267,11 +987,8 @@ export default function AccountsPage() {
                       e.target.value,
                   })
                 }
-                style={
-                  styles.input
-                }
+                style={styles.input}
               >
-
                 <option value="BDT">
                   BDT (৳)
                 </option>
@@ -1279,10 +996,7 @@ export default function AccountsPage() {
                 <option value="USD">
                   USD ($)
                 </option>
-
               </select>
-
-              {/* DATE */}
 
               <input
                 type="date"
@@ -1296,12 +1010,8 @@ export default function AccountsPage() {
                       e.target.value,
                   })
                 }
-                style={
-                  styles.input
-                }
+                style={styles.input}
               />
-
-              {/* PAYMENT METHOD */}
 
               <select
                 value={
@@ -1314,38 +1024,32 @@ export default function AccountsPage() {
                       e.target.value,
                   })
                 }
-                style={
-                  styles.input
-                }
+                style={styles.input}
               >
-
-                <option value="Cash">
+                <option>
                   Cash
                 </option>
 
-                <option value="Bank">
+                <option>
                   Bank
                 </option>
 
-                <option value="bKash">
+                <option>
                   bKash
                 </option>
 
-                <option value="Nagad">
+                <option>
                   Nagad
                 </option>
 
-                <option value="LC Payment">
+                <option>
                   LC Payment
                 </option>
 
-                <option value="Other">
+                <option>
                   Other
                 </option>
-
               </select>
-
-              {/* PAYMENT STATUS */}
 
               <select
                 value={
@@ -1358,479 +1062,165 @@ export default function AccountsPage() {
                       e.target.value,
                   })
                 }
-                style={
-                  styles.input
-                }
+                style={styles.input}
               >
+                <option>
+                  Factory Pending
+                </option>
 
-                {paymentStatuses.map(
-                  (status) => (
-                    <option
-                      key={
-                        status.value
-                      }
-                      value={
-                        status.value
-                      }
-                    >
-                      {
-                        status.label
-                      }
-                    </option>
-                  )
-                )}
+                <option>
+                  LC Accepted
+                </option>
 
+                <option>
+                  Purchase Done
+                </option>
+
+                <option>
+                  On Hold
+                </option>
+
+                <option>
+                  Payment Received
+                </option>
               </select>
-
-              {/* NOTE */}
 
               <input
                 placeholder="Note"
-                value={
-                  paymentForm.note
-                }
+                value={paymentForm.note}
                 onChange={(e) =>
                   setPaymentForm({
                     ...paymentForm,
-                    note:
-                      e.target.value,
+                    note: e.target.value,
                   })
                 }
-                style={
-                  styles.input
-                }
+                style={styles.input}
               />
 
             </div>
 
             <button
               type="submit"
-              style={
-                styles.successButton
-              }
+              style={styles.successButton}
             >
               Save Payment
             </button>
-
           </form>
         )}
 
-        {/* =================================
-            CLIENT LIST
-        ================================= */}
+        {/* CLIENT LIST */}
 
-        <section
-          style={
-            styles.section
-          }
-        >
+        <section style={styles.section}>
 
-          <h2
-            style={
-              styles.sectionTitle
-            }
-          >
+          <h2 style={styles.sectionTitle}>
             👥 Client Accounts
           </h2>
 
           {loading ? (
             <p>Loading...</p>
-          ) : clients.length ===
-            0 ? (
-            <p
-              style={
-                styles.empty
-              }
-            >
+          ) : clients.length === 0 ? (
+            <p style={styles.empty}>
               এখনো কোনো Client নেই।
             </p>
           ) : (
-            <div
-              style={
-                styles.tableWrapper
-              }
-            >
+            <div style={styles.tableWrapper}>
 
-              <table
-                style={
-                  styles.table
-                }
-              >
+              <table style={styles.table}>
 
                 <thead>
                   <tr>
-
-                    <th
-                      style={
-                        styles.th
-                      }
-                    >
+                    <th style={styles.th}>
                       Client
                     </th>
 
-                    <th
-                      style={
-                        styles.th
-                      }
-                    >
+                    <th style={styles.th}>
                       Phone
                     </th>
 
-                    <th
-                      style={
-                        styles.th
-                      }
-                    >
+                    <th style={styles.th}>
                       Total Bill
                     </th>
 
-                    <th
-                      style={
-                        styles.th
-                      }
-                    >
+                    <th style={styles.th}>
                       Received
                     </th>
 
-                    <th
-                      style={
-                        styles.th
-                      }
-                    >
+                    <th style={styles.th}>
                       Due
                     </th>
 
-                    <th
-                      style={
-                        styles.th
-                      }
-                    >
+                    <th style={styles.th}>
                       Action
                     </th>
-
                   </tr>
                 </thead>
 
                 <tbody>
 
-                  {clients.map(
-                    (client) => {
+                  {clients.map((client) => {
 
-                      const billBDT =
-                        getClientCurrencyTotal(
-                          client.id,
-                          "BDT"
-                        );
-
-                      const billUSD =
-                        getClientCurrencyTotal(
-                          client.id,
-                          "USD"
-                        );
-
-                      const receivedBDT =
-                        getClientCurrencyReceived(
-                          client.id,
-                          "BDT"
-                        );
-
-                      const receivedUSD =
-                        getClientCurrencyReceived(
-                          client.id,
-                          "USD"
-                        );
-
-                      const dueBDT =
-                        getClientCurrencyDue(
-                          client.id,
-                          "BDT"
-                        );
-
-                      const dueUSD =
-                        getClientCurrencyDue(
-                          client.id,
-                          "USD"
-                        );
-
-                      return (
-                        <tr
-                          key={
-                            client.id
-                          }
-                        >
-
-                          <td
-                            style={
-                              styles.td
-                            }
-                          >
-                            <strong>
-                              {
-                                client.client_name
-                              }
-                            </strong>
-                          </td>
-
-                          <td
-                            style={
-                              styles.td
-                            }
-                          >
-                            {
-                              client.phone ||
-                              "-"
-                            }
-                          </td>
-
-                          <td
-                            style={
-                              styles.td
-                            }
-                          >
-                            <div>
-                              ৳
-                              {billBDT.toLocaleString()}
-                            </div>
-
-                            <div>
-                              $
-                              {billUSD.toLocaleString()}
-                            </div>
-                          </td>
-
-                          <td
-                            style={
-                              styles.td
-                            }
-                          >
-                            <span
-                              style={
-                                styles.received
-                              }
-                            >
-                              <div>
-                                ৳
-                                {receivedBDT.toLocaleString()}
-                              </div>
-
-                              <div>
-                                $
-                                {receivedUSD.toLocaleString()}
-                              </div>
-                            </span>
-                          </td>
-
-                          <td
-                            style={
-                              styles.td
-                            }
-                          >
-                            <span
-                              style={
-                                dueBDT >
-                                  0 ||
-                                dueUSD >
-                                  0
-                                  ? styles.dueBadge
-                                  : styles.paidBadge
-                              }
-                            >
-                              <div>
-                                ৳
-                                {dueBDT.toLocaleString()}
-                              </div>
-
-                              <div>
-                                $
-                                {dueUSD.toLocaleString()}
-                              </div>
-                            </span>
-                          </td>
-
-                          <td
-                            style={
-                              styles.td
-                            }
-                          >
-                            <button
-                              onClick={() =>
-                                deleteClient(
-                                  client.id
-                                )
-                              }
-                              style={
-                                styles.deleteButton
-                              }
-                            >
-                              Delete
-                            </button>
-                          </td>
-
-                        </tr>
+                    const bill =
+                      getClientTotalBill(
+                        client.id
                       );
-                    }
-                  )}
 
-                </tbody>
+                    const received =
+                      getClientReceived(
+                        client.id
+                      );
 
-              </table>
+                    const due =
+                      getClientDue(
+                        client.id
+                      );
 
-            </div>
-          )}
+                    return (
+                      <tr key={client.id}>
 
-        </section>
-
-        {/* =================================
-            BILL HISTORY
-        ================================= */}
-
-        <section
-          style={
-            styles.section
-          }
-        >
-
-          <h2
-            style={
-              styles.sectionTitle
-            }
-          >
-            🧾 Bill History
-          </h2>
-
-          {bills.length ===
-          0 ? (
-            <p
-              style={
-                styles.empty
-              }
-            >
-              কোনো Bill নেই।
-            </p>
-          ) : (
-            <div
-              style={
-                styles.tableWrapper
-              }
-            >
-
-              <table
-                style={
-                  styles.table
-                }
-              >
-
-                <thead>
-                  <tr>
-
-                    <th
-                      style={
-                        styles.th
-                      }
-                    >
-                      Date
-                    </th>
-
-                    <th
-                      style={
-                        styles.th
-                      }
-                    >
-                      Client
-                    </th>
-
-                    <th
-                      style={
-                        styles.th
-                      }
-                    >
-                      Bill No.
-                    </th>
-
-                    <th
-                      style={
-                        styles.th
-                      }
-                    >
-                      Amount
-                    </th>
-
-                    <th
-                      style={
-                        styles.th
-                      }
-                    >
-                      Action
-                    </th>
-
-                  </tr>
-                </thead>
-
-                <tbody>
-
-                  {bills.map(
-                    (bill) => (
-                      <tr
-                        key={
-                          bill.id
-                        }
-                      >
-
-                        <td
-                          style={
-                            styles.td
-                          }
-                        >
-                          {
-                            bill.bill_date
-                          }
+                        <td style={styles.td}>
+                          <strong>
+                            {client.client_name}
+                          </strong>
                         </td>
 
-                        <td
-                          style={
-                            styles.td
-                          }
-                        >
-                          {getClientName(
-                            bill.client_id
-                          )}
+                        <td style={styles.td}>
+                          {client.phone || "-"}
                         </td>
 
-                        <td
-                          style={
-                            styles.td
-                          }
-                        >
-                          {
-                            bill.bill_number ||
-                            "-"
-                          }
+                        <td style={styles.td}>
+                          ৳
+                          {bill.toLocaleString()}
                         </td>
 
-                        <td
-                          style={
-                            styles.td
-                          }
-                        >
-                          {bill.currency ===
-                          "USD"
-                            ? "$"
-                            : "৳"}
-
-                          {Number(
-                            bill.bill_amount
-                          ).toLocaleString()}
+                        <td style={styles.td}>
+                          <span
+                            style={
+                              styles.received
+                            }
+                          >
+                            ৳
+                            {received.toLocaleString()}
+                          </span>
                         </td>
 
-                        <td
-                          style={
-                            styles.td
-                          }
-                        >
+                        <td style={styles.td}>
+                          <span
+                            style={
+                              due > 0
+                                ? styles.dueBadge
+                                : styles.paidBadge
+                            }
+                          >
+                            ৳
+                            {due.toLocaleString()}
+                          </span>
+                        </td>
+
+                        <td style={styles.td}>
                           <button
                             onClick={() =>
-                              deleteBill(
-                                bill.id
+                              deleteClient(
+                                client.id
                               )
                             }
                             style={
@@ -1842,8 +1232,8 @@ export default function AccountsPage() {
                         </td>
 
                       </tr>
-                    )
-                  )}
+                    );
+                  })}
 
                 </tbody>
 
@@ -1854,95 +1244,153 @@ export default function AccountsPage() {
 
         </section>
 
-        {/* =================================
+        {/* BILL HISTORY */}
+
+        <section style={styles.section}>
+
+          <h2 style={styles.sectionTitle}>
+            🧾 Bill History
+          </h2>
+
+          {bills.length === 0 ? (
+            <p style={styles.empty}>
+              কোনো Bill নেই।
+            </p>
+          ) : (
+            <div style={styles.tableWrapper}>
+
+              <table style={styles.table}>
+
+                <thead>
+                  <tr>
+
+                    <th style={styles.th}>
+                      Date
+                    </th>
+
+                    <th style={styles.th}>
+                      Client
+                    </th>
+
+                    <th style={styles.th}>
+                      Bill No.
+                    </th>
+
+                    <th style={styles.th}>
+                      Amount
+                    </th>
+
+                    <th style={styles.th}>
+                      Action
+                    </th>
+
+                  </tr>
+                </thead>
+
+                <tbody>
+
+                  {bills.map((bill) => (
+
+                    <tr key={bill.id}>
+
+                      <td style={styles.td}>
+                        {bill.bill_date}
+                      </td>
+
+                      <td style={styles.td}>
+                        {getClientName(
+                          bill.client_id
+                        )}
+                      </td>
+
+                      <td style={styles.td}>
+                        {bill.bill_number || "-"}
+                      </td>
+
+                      <td style={styles.td}>
+                        {bill.currency ===
+                        "USD"
+                          ? "$"
+                          : "৳"}
+
+                        {Number(
+                          bill.bill_amount
+                        ).toLocaleString()}
+                      </td>
+
+                      <td style={styles.td}>
+                        <button
+                          onClick={() =>
+                            deleteBill(
+                              bill.id
+                            )
+                          }
+                          style={
+                            styles.deleteButton
+                          }
+                        >
+                          Delete
+                        </button>
+                      </td>
+
+                    </tr>
+
+                  ))}
+
+                </tbody>
+
+              </table>
+
+            </div>
+          )}
+
+        </section>
+
+        {/* =====================================================
             PAYMENT HISTORY
-        ================================= */}
+        ===================================================== */}
 
-        <section
-          style={
-            styles.section
-          }
-        >
+        <section style={styles.section}>
 
-          <h2
-            style={
-              styles.sectionTitle
-            }
-          >
+          <h2 style={styles.sectionTitle}>
             💰 Payment History
           </h2>
 
-          {payments.length ===
-          0 ? (
-            <p
-              style={
-                styles.empty
-              }
-            >
+          {payments.length === 0 ? (
+            <p style={styles.empty}>
               কোনো Payment নেই।
             </p>
           ) : (
-            <div
-              style={
-                styles.tableWrapper
-              }
-            >
 
-              <table
-                style={
-                  styles.table
-                }
-              >
+            <div style={styles.tableWrapper}>
+
+              <table style={styles.table}>
 
                 <thead>
 
                   <tr>
 
-                    <th
-                      style={
-                        styles.th
-                      }
-                    >
+                    <th style={styles.th}>
                       Date
                     </th>
 
-                    <th
-                      style={
-                        styles.th
-                      }
-                    >
+                    <th style={styles.th}>
                       Client
                     </th>
 
-                    <th
-                      style={
-                        styles.th
-                      }
-                    >
+                    <th style={styles.th}>
                       Amount
                     </th>
 
-                    <th
-                      style={
-                        styles.th
-                      }
-                    >
+                    <th style={styles.th}>
                       Method
                     </th>
 
-                    <th
-                      style={
-                        styles.th
-                      }
-                    >
+                    <th style={styles.th}>
                       Payment Status
                     </th>
 
-                    <th
-                      style={
-                        styles.th
-                      }
-                    >
+                    <th style={styles.th}>
                       Action
                     </th>
 
@@ -1953,120 +1401,105 @@ export default function AccountsPage() {
                 <tbody>
 
                   {payments.map(
-                    (payment) => {
+                    (payment) => (
 
-                      const currentStatus =
-                        payment.payment_status ||
-                        "Factory Pending";
+                      <tr key={payment.id}>
 
-                      return (
-                        <tr
-                          key={
-                            payment.id
-                          }
-                        >
+                        <td style={styles.td}>
+                          {payment.payment_date}
+                        </td>
 
-                          <td
-                            style={
-                              styles.td
+                        <td style={styles.td}>
+                          {getClientName(
+                            payment.client_id
+                          )}
+                        </td>
+
+                        <td style={styles.td}>
+                          {payment.currency ===
+                          "USD"
+                            ? "$"
+                            : "৳"}
+
+                          {Number(
+                            payment.amount
+                          ).toLocaleString()}
+                        </td>
+
+                        <td style={styles.td}>
+                          {payment.payment_method ||
+                            "-"}
+                        </td>
+
+                        {/* STATUS */}
+
+                        <td style={styles.td}>
+
+                          <select
+                            value={
+                              payment.payment_status ||
+                              "Factory Pending"
                             }
-                          >
-                            {
-                              payment.payment_date
+                            onChange={(e) =>
+                              updatePaymentStatus(
+                                payment,
+                                e.target.value
+                              )
                             }
-                          </td>
-
-                          <td
-                            style={
-                              styles.td
-                            }
-                          >
-                            {getClientName(
-                              payment.client_id
-                            )}
-                          </td>
-
-                          <td
-                            style={
-                              styles.td
-                            }
-                          >
-
-                            {payment.currency ===
-                            "USD"
-                              ? "$"
-                              : "৳"}
-
-                            {Number(
-                              payment.amount
-                            ).toLocaleString()}
-
-                          </td>
-
-                          <td
-                            style={
-                              styles.td
-                            }
-                          >
-                            {
-                              payment.payment_method ||
-                              "-"
-                            }
-                          </td>
-
-                          {/* STATUS */}
-
-                          <td
-                            style={
-                              styles.td
-                            }
+                            style={{
+                              ...styles.statusSelect,
+                              ...getStatusStyle(
+                                payment.payment_status
+                              ),
+                            }}
                           >
 
-                            <select
-                              value={
-                                currentStatus
-                              }
-                              onChange={(
-                                e
-                              ) =>
-                                updatePaymentStatus(
-                                  payment.id,
-                                  e.target.value
+                            <option>
+                              Factory Pending
+                            </option>
+
+                            <option>
+                              LC Accepted
+                            </option>
+
+                            <option>
+                              Purchase Done
+                            </option>
+
+                            <option>
+                              On Hold
+                            </option>
+
+                            <option>
+                              Payment Received
+                            </option>
+
+                          </select>
+
+                        </td>
+
+                        {/* ACTION */}
+
+                        <td style={styles.td}>
+
+                          <div
+                            style={
+                              styles.actionButtons
+                            }
+                          >
+
+                            <button
+                              onClick={() =>
+                                showPaymentHistory(
+                                  payment
                                 )
                               }
                               style={
-                                styles.statusSelect
+                                styles.historyButton
                               }
                             >
-
-                              {paymentStatuses.map(
-                                (
-                                  status
-                                ) => (
-                                  <option
-                                    key={
-                                      status.value
-                                    }
-                                    value={
-                                      status.value
-                                    }
-                                  >
-                                    {
-                                      status.label
-                                    }
-                                  </option>
-                                )
-                              )}
-
-                            </select>
-
-                          </td>
-
-                          <td
-                            style={
-                              styles.td
-                            }
-                          >
+                              📜 History
+                            </button>
 
                             <button
                               onClick={() =>
@@ -2081,11 +1514,13 @@ export default function AccountsPage() {
                               Delete
                             </button>
 
-                          </td>
+                          </div>
 
-                        </tr>
-                      );
-                    }
+                        </td>
+
+                      </tr>
+
+                    )
                   )}
 
                 </tbody>
@@ -2093,14 +1528,187 @@ export default function AccountsPage() {
               </table>
 
             </div>
+
           )}
 
         </section>
 
       </div>
+
+      {/* =====================================================
+          PAYMENT HISTORY MODAL
+      ===================================================== */}
+
+      {historyPayment && (
+
+        <div style={styles.overlay}>
+
+          <div style={styles.modal}>
+
+            <div
+              style={
+                styles.modalHeader
+              }
+            >
+
+              <div>
+
+                <h2
+                  style={{
+                    margin: 0,
+                  }}
+                >
+                  📜 Payment Status History
+                </h2>
+
+                <p
+                  style={{
+                    margin:
+                      "6px 0 0",
+                    color: "#666",
+                  }}
+                >
+                  {
+                    getClientName(
+                      historyPayment.client_id
+                    )
+                  }
+
+                  {" — "}
+
+                  {historyPayment.currency ===
+                  "USD"
+                    ? "$"
+                    : "৳"}
+
+                  {Number(
+                    historyPayment.amount
+                  ).toLocaleString()}
+                </p>
+
+              </div>
+
+              <button
+                onClick={() =>
+                  setHistoryPayment(null)
+                }
+                style={
+                  styles.closeButton
+                }
+              >
+                ✕
+              </button>
+
+            </div>
+
+            {historyLoading ? (
+
+              <div
+                style={
+                  styles.historyEmpty
+                }
+              >
+                Loading History...
+              </div>
+
+            ) : paymentHistory.length ===
+              0 ? (
+
+              <div
+                style={
+                  styles.historyEmpty
+                }
+              >
+                এই Payment-এর কোনো
+                History পাওয়া যায়নি।
+              </div>
+
+            ) : (
+
+              <div>
+
+                {paymentHistory.map(
+                  (item, index) => (
+
+                    <div
+                      key={item.id}
+                      style={
+                        styles.historyItem
+                      }
+                    >
+
+                      <div
+                        style={
+                          styles.historyTop
+                        }
+                      >
+
+                        <strong>
+                          {item.previous_status
+                            ? item.previous_status
+                            : "New Payment"}
+                        </strong>
+
+                        <span
+                          style={{
+                            margin:
+                              "0 8px",
+                            color:
+                              "#888",
+                          }}
+                        >
+                          →
+                        </span>
+
+                        <strong>
+                          {item.new_status}
+                        </strong>
+
+                      </div>
+
+                      <div
+                        style={
+                          styles.historyDate
+                        }
+                      >
+                        📅{" "}
+                        {new Date(
+                          item.created_at
+                        ).toLocaleString(
+                          "en-GB"
+                        )}
+                      </div>
+
+                      <div
+                        style={
+                          styles.historyNumber
+                        }
+                      >
+                        Update #{paymentHistory.length - index}
+                      </div>
+
+                    </div>
+
+                  )
+                )}
+
+              </div>
+
+            )}
+
+          </div>
+
+        </div>
+
+      )}
+
     </main>
   );
 }
+
+/* =====================================================
+   STYLES
+===================================================== */
 
 const styles: Record<
   string,
@@ -2110,8 +1718,7 @@ const styles: Record<
   page: {
     minHeight: "100vh",
     padding: "30px",
-    background:
-      "#f5f7fb",
+    background: "#f5f7fb",
   },
 
   container: {
@@ -2179,17 +1786,9 @@ const styles: Record<
     marginTop: "4px",
   },
 
-  currencySummary: {
-    fontSize: "21px",
+  dueValue: {
+    fontSize: "24px",
     fontWeight: 700,
-    lineHeight: 1.5,
-    marginTop: "4px",
-  },
-
-  currencyDueSummary: {
-    fontSize: "21px",
-    fontWeight: 700,
-    lineHeight: 1.5,
     marginTop: "4px",
     color: "#dc2626",
   },
@@ -2288,23 +1887,14 @@ const styles: Record<
     background: "#f3f4f6",
     borderBottom:
       "1px solid #ddd",
+    whiteSpace: "nowrap",
   },
 
   td: {
     padding: "12px",
     borderBottom:
       "1px solid #eee",
-  },
-
-  statusSelect: {
-    padding: "8px 10px",
-    border:
-      "1px solid #d1d5db",
-    borderRadius: "7px",
-    background: "white",
-    fontSize: "13px",
-    cursor: "pointer",
-    minWidth: "210px",
+    verticalAlign: "middle",
   },
 
   received: {
@@ -2331,9 +1921,139 @@ const styles: Record<
     cursor: "pointer",
   },
 
+  historyButton: {
+    border: "none",
+    background: "#ede9fe",
+    color: "#6d28d9",
+    padding: "7px 10px",
+    borderRadius: "6px",
+    cursor: "pointer",
+    fontWeight: 600,
+  },
+
+  actionButtons: {
+    display: "flex",
+    gap: "7px",
+    alignItems: "center",
+  },
+
+  statusSelect: {
+    padding: "8px 10px",
+    borderRadius: "7px",
+    border:
+      "1px solid #d1d5db",
+    fontWeight: 600,
+    cursor: "pointer",
+    minWidth: "170px",
+  },
+
+  statusFactory: {
+    background: "#fff7ed",
+    color: "#c2410c",
+  },
+
+  statusAccepted: {
+    background: "#ede9fe",
+    color: "#6d28d9",
+  },
+
+  statusPurchase: {
+    background: "#dcfce7",
+    color: "#15803d",
+  },
+
+  statusHold: {
+    background: "#fee2e2",
+    color: "#b91c1c",
+  },
+
+  statusReceived: {
+    background: "#dcfce7",
+    color: "#166534",
+  },
+
+  statusDefault: {
+    background: "#f3f4f6",
+    color: "#374151",
+  },
+
   empty: {
     color: "#777",
     textAlign: "center",
     padding: "25px",
+  },
+
+  overlay: {
+    position: "fixed",
+    inset: 0,
+    background:
+      "rgba(0,0,0,0.55)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "20px",
+    zIndex: 9999,
+  },
+
+  modal: {
+    background: "white",
+    width: "100%",
+    maxWidth: "650px",
+    maxHeight: "80vh",
+    overflowY: "auto",
+    borderRadius: "16px",
+    padding: "25px",
+    boxSizing: "border-box",
+  },
+
+  modalHeader: {
+    display: "flex",
+    justifyContent:
+      "space-between",
+    alignItems: "flex-start",
+    marginBottom: "20px",
+  },
+
+  closeButton: {
+    border: "none",
+    background: "#f3f4f6",
+    width: "35px",
+    height: "35px",
+    borderRadius: "8px",
+    cursor: "pointer",
+    fontWeight: 700,
+  },
+
+  historyItem: {
+    border:
+      "1px solid #e5e7eb",
+    borderRadius: "10px",
+    padding: "15px",
+    marginBottom: "10px",
+    background: "#fafafa",
+  },
+
+  historyTop: {
+    display: "flex",
+    alignItems: "center",
+    fontSize: "15px",
+  },
+
+  historyDate: {
+    marginTop: "8px",
+    color: "#666",
+    fontSize: "13px",
+  },
+
+  historyNumber: {
+    marginTop: "5px",
+    color: "#999",
+    fontSize: "12px",
+  },
+
+  historyEmpty: {
+    textAlign: "center",
+    padding: "40px 10px",
+    color: "#777",
   },
 };
