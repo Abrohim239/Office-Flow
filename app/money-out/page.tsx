@@ -22,6 +22,8 @@ export default function MoneyOutPage() {
   const [selectedMonth, setSelectedMonth] = useState(
     new Date().toISOString().slice(0, 7)
   );
+  const [categoryCurrency, setCategoryCurrency] = useState("ALL");
+  const [categorySort, setCategorySort] = useState("amount");
 
   const [form, setForm] = useState({
     paid_to: "",
@@ -157,7 +159,20 @@ async function addMoneyOut(e: React.FormEvent) {
       },
       {}
     )
-  ).sort((a, b) => (b.bdt + b.usd) - (a.bdt + a.usd));
+  );
+
+  const visibleCategoryTotals = [...categoryTotals]
+    .filter((item) => categoryCurrency === "ALL" || (categoryCurrency === "BDT" ? item.bdt > 0 : item.usd > 0))
+    .sort((a, b) => {
+      if (categorySort === "count") return b.count - a.count;
+      if (categorySort === "name") return a.category.localeCompare(b.category);
+      if (categoryCurrency === "USD") return b.usd - a.usd;
+      if (categoryCurrency === "BDT") return b.bdt - a.bdt;
+      return (b.bdt + b.usd) - (a.bdt + a.usd);
+    });
+  const categoryEntryCount = categoryTotals.reduce((sum, item) => sum + item.count, 0);
+  const categoryCount = categoryTotals.length;
+  const maxCategoryValue = Math.max(1, ...visibleCategoryTotals.map((item) => categoryCurrency === "USD" ? item.usd : categoryCurrency === "BDT" ? item.bdt : item.count));
 
   return (
     <main style={styles.page}>
@@ -209,38 +224,98 @@ async function addMoneyOut(e: React.FormEvent) {
         </div>
 
         {/* MONTHLY EXPENSE BY CATEGORY */}
-        <section style={{ ...styles.section, marginBottom: "25px" }}>
-          <h2 style={styles.sectionTitle}>📊 Monthly Expense By Category</h2>
-          <p style={{ color: "#666", marginTop: "-8px", marginBottom: "18px" }}>
-            {new Date(`${selectedMonth}-01T12:00:00`).toLocaleDateString("en-US", {
-              month: "long",
-              year: "numeric",
-            })} মাসের category-wise খরচ
-          </p>
-          {categoryTotals.length === 0 ? (
-            <p style={styles.empty}>এই মাসে category-wise দেখানোর মতো কোনো expense নেই।</p>
+        <section style={{ ...styles.categorySection, marginBottom: "25px" }}>
+          <div style={styles.categoryHeader}>
+            <div>
+              <div style={styles.categoryEyebrow}>MONTHLY BREAKDOWN</div>
+              <h2 style={styles.categoryTitle}>📊 Monthly Expense By Category</h2>
+              <p style={styles.categorySubtitle}>
+                {new Date(`${selectedMonth}-01T12:00:00`).toLocaleDateString("en-US", {
+                  month: "long", year: "numeric",
+                })} — ক্যাটাগরি অনুযায়ী মাসিক খরচের বিস্তারিত
+              </p>
+            </div>
+            <div style={styles.categoryControls}>
+              <label style={styles.controlLabel}>Month</label>
+              <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} style={styles.monthSelect}>
+                {monthOptions.map((month) => (
+                  <option key={month} value={month}>
+                    {new Date(`${month}-01T12:00:00`).toLocaleDateString("en-US", { month: "long", year: "numeric" })}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div style={styles.categoryKpiGrid}>
+            <div style={styles.categoryKpi}>
+              <span style={styles.kpiIcon}>🧾</span>
+              <div><div style={styles.kpiLabel}>Expense Entries</div><div style={styles.kpiValue}>{categoryEntryCount}</div></div>
+            </div>
+            <div style={styles.categoryKpi}>
+              <span style={styles.kpiIcon}>🗂️</span>
+              <div><div style={styles.kpiLabel}>Active Categories</div><div style={styles.kpiValue}>{categoryCount}</div></div>
+            </div>
+            <div style={styles.categoryKpi}>
+              <span style={styles.kpiIcon}>💵</span>
+              <div><div style={styles.kpiLabel}>Total BDT</div><div style={{ ...styles.kpiValue, color: "#047857" }}>৳{totalBDT.toLocaleString()}</div></div>
+            </div>
+            <div style={styles.categoryKpi}>
+              <span style={styles.kpiIcon}>💲</span>
+              <div><div style={styles.kpiLabel}>Total USD</div><div style={{ ...styles.kpiValue, color: "#1d4ed8" }}>${totalUSD.toLocaleString()}</div></div>
+            </div>
+          </div>
+
+          <div style={styles.categoryToolbar}>
+            <div>
+              <div style={styles.toolbarTitle}>Category overview</div>
+              <div style={styles.toolbarHint}>প্রতিটি ক্যাটাগরির মোট খরচ ও এন্ট্রি দেখুন</div>
+            </div>
+            <div style={styles.toolbarControls}>
+              <select value={categoryCurrency} onChange={(e) => setCategoryCurrency(e.target.value)} style={styles.filterSelect} aria-label="Filter category currency">
+                <option value="ALL">All currencies</option>
+                <option value="BDT">BDT only</option>
+                <option value="USD">USD only</option>
+              </select>
+              <select value={categorySort} onChange={(e) => setCategorySort(e.target.value)} style={styles.filterSelect} aria-label="Sort categories">
+                <option value="amount">Highest expense</option>
+                <option value="count">Most entries</option>
+                <option value="name">Category name</option>
+              </select>
+            </div>
+          </div>
+
+          {loading ? (
+            <p style={styles.empty}>Category হিসাব লোড হচ্ছে...</p>
+          ) : visibleCategoryTotals.length === 0 ? (
+            <div style={styles.categoryEmpty}>
+              <div style={{ fontSize: "34px", marginBottom: "8px" }}>📭</div>
+              <strong>এই মাসে কোনো Expense Entry নেই</strong>
+              <p style={{ margin: "7px 0 0", color: "#64748b" }}>অন্য মাস নির্বাচন করুন অথবা Money Out যোগ করুন।</p>
+            </div>
           ) : (
-            <div style={styles.tableWrapper}>
-              <table style={styles.table}>
-                <thead>
-                  <tr>
-                    <th style={styles.th}>Category</th>
-                    <th style={styles.th}>Total BDT</th>
-                    <th style={styles.th}>Total USD</th>
-                    <th style={styles.th}>Entries</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {categoryTotals.map((item) => (
-                    <tr key={item.category}>
-                      <td style={styles.td}><strong>{item.category}</strong></td>
-                      <td style={styles.td}>৳{item.bdt.toLocaleString()}</td>
-                      <td style={styles.td}>${item.usd.toLocaleString()}</td>
-                      <td style={styles.td}>{item.count}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div style={styles.categoryGrid}>
+              {visibleCategoryTotals.map((item, index) => {
+                const value = categoryCurrency === "USD" ? item.usd : categoryCurrency === "BDT" ? item.bdt : item.count;
+                const percent = Math.round((value / maxCategoryValue) * 100);
+                const accents = ["#2563eb", "#059669", "#7c3aed", "#ea580c", "#0891b2", "#db2777", "#4f46e5", "#65a30d"];
+                const accent = accents[index % accents.length];
+                return (
+                  <div key={item.category} style={styles.categoryCard}>
+                    <div style={styles.categoryCardTop}>
+                      <div style={{ ...styles.categoryDot, background: accent }} />
+                      <div style={styles.categoryName}>{item.category}</div>
+                      <span style={styles.entryPill}>{item.count} {item.count === 1 ? "entry" : "entries"}</span>
+                    </div>
+                    <div style={styles.categoryAmounts}>
+                      {categoryCurrency !== "USD" && <div><div style={styles.amountCaption}>BDT total</div><div style={styles.amountBDT}>৳{item.bdt.toLocaleString()}</div></div>}
+                      {categoryCurrency !== "BDT" && <div><div style={styles.amountCaption}>USD total</div><div style={styles.amountUSD}>${item.usd.toLocaleString()}</div></div>}
+                    </div>
+                    <div style={styles.progressTrack}><div style={{ ...styles.progressFill, width: `${percent}%`, background: accent }} /></div>
+                    <div style={styles.progressCaption}><span>{categoryCurrency === "ALL" ? "Share of entries" : "Relative expense"}</span><strong>{percent}%</strong></div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </section>
@@ -528,6 +603,47 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 700,
     marginTop: "5px",
   },
+
+  categorySection: {
+    background: "linear-gradient(145deg, #ffffff 0%, #f8fbff 100%)",
+    padding: "26px",
+    borderRadius: "20px",
+    border: "1px solid #e5eaf3",
+    boxShadow: "0 10px 30px rgba(15, 23, 42, 0.07)",
+  },
+  categoryHeader: {
+    display: "flex", justifyContent: "space-between", alignItems: "flex-start",
+    gap: "18px", flexWrap: "wrap", marginBottom: "22px",
+  },
+  categoryEyebrow: { fontSize: "11px", letterSpacing: "1.8px", fontWeight: 800, color: "#2563eb", marginBottom: "7px" },
+  categoryTitle: { margin: 0, fontSize: "24px", color: "#0f172a" },
+  categorySubtitle: { color: "#64748b", margin: "8px 0 0", fontSize: "14px" },
+  categoryControls: { display: "flex", flexDirection: "column", gap: "6px", minWidth: "190px" },
+  controlLabel: { fontSize: "12px", color: "#64748b", fontWeight: 700 },
+  categoryKpiGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(175px, 1fr))", gap: "12px", marginBottom: "24px" },
+  categoryKpi: { display: "flex", alignItems: "center", gap: "12px", padding: "16px", background: "#fff", border: "1px solid #e8edf5", borderRadius: "14px" },
+  kpiIcon: { width: "42px", height: "42px", borderRadius: "12px", background: "#eff6ff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "21px", flexShrink: 0 },
+  kpiLabel: { color: "#64748b", fontSize: "12px", fontWeight: 600 },
+  kpiValue: { color: "#0f172a", fontSize: "21px", fontWeight: 800, marginTop: "3px" },
+  categoryToolbar: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: "14px", flexWrap: "wrap", padding: "16px 0", borderTop: "1px solid #e8edf5", borderBottom: "1px solid #e8edf5", marginBottom: "17px" },
+  toolbarTitle: { color: "#0f172a", fontSize: "15px", fontWeight: 800 },
+  toolbarHint: { color: "#64748b", fontSize: "12px", marginTop: "4px" },
+  toolbarControls: { display: "flex", gap: "8px", flexWrap: "wrap" },
+  filterSelect: { padding: "10px 12px", border: "1px solid #dbe3ef", borderRadius: "9px", background: "#fff", color: "#334155", fontSize: "13px" },
+  categoryGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(245px, 1fr))", gap: "14px" },
+  categoryCard: { background: "#fff", border: "1px solid #e5eaf3", borderRadius: "15px", padding: "17px", boxShadow: "0 3px 10px rgba(15,23,42,0.025)" },
+  categoryCardTop: { display: "flex", alignItems: "center", gap: "9px", marginBottom: "18px" },
+  categoryDot: { width: "10px", height: "10px", borderRadius: "50%", flexShrink: 0 },
+  categoryName: { color: "#0f172a", fontWeight: 800, fontSize: "15px", flex: 1 },
+  entryPill: { fontSize: "10px", fontWeight: 700, color: "#475569", background: "#f1f5f9", padding: "5px 7px", borderRadius: "20px", whiteSpace: "nowrap" },
+  categoryAmounts: { display: "flex", gap: "24px", flexWrap: "wrap", marginBottom: "18px" },
+  amountCaption: { color: "#94a3b8", fontSize: "11px", marginBottom: "4px" },
+  amountBDT: { color: "#047857", fontWeight: 800, fontSize: "19px" },
+  amountUSD: { color: "#1d4ed8", fontWeight: 800, fontSize: "19px" },
+  progressTrack: { height: "7px", background: "#eef2f7", borderRadius: "20px", overflow: "hidden" },
+  progressFill: { height: "100%", borderRadius: "20px", transition: "width 180ms ease" },
+  progressCaption: { display: "flex", justifyContent: "space-between", marginTop: "8px", color: "#94a3b8", fontSize: "11px" },
+  categoryEmpty: { textAlign: "center", padding: "35px 15px", background: "#fff", border: "1px dashed #cbd5e1", borderRadius: "14px", color: "#334155" },
 
   formCard: {
     background: "white",
