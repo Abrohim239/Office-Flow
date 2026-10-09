@@ -141,6 +141,24 @@ async function addMoneyOut(e: React.FormEvent) {
     .filter((item) => item.currency === "USD")
     .reduce((sum, item) => sum + Number(item.amount || 0), 0);
 
+  // Selected month's expense totals grouped by category and currency
+  const categoryTotals = Object.values(
+    monthlyRecords.reduce<Record<string, { category: string; bdt: number; usd: number; count: number }>>(
+      (groups, item) => {
+        const category = item.category || "Other";
+        if (!groups[category]) {
+          groups[category] = { category, bdt: 0, usd: 0, count: 0 };
+        }
+        const amount = Number(item.amount || 0);
+        if (item.currency === "USD") groups[category].usd += amount;
+        else groups[category].bdt += amount;
+        groups[category].count += 1;
+        return groups;
+      },
+      {}
+    )
+  ).sort((a, b) => (b.bdt + b.usd) - (a.bdt + a.usd));
+
   return (
     <main style={styles.page}>
       <div style={styles.container}>
@@ -189,6 +207,43 @@ async function addMoneyOut(e: React.FormEvent) {
           </div>
 
         </div>
+
+        {/* MONTHLY EXPENSE BY CATEGORY */}
+        <section style={{ ...styles.section, marginBottom: "25px" }}>
+          <h2 style={styles.sectionTitle}>📊 Monthly Expense By Category</h2>
+          <p style={{ color: "#666", marginTop: "-8px", marginBottom: "18px" }}>
+            {new Date(`${selectedMonth}-01T12:00:00`).toLocaleDateString("en-US", {
+              month: "long",
+              year: "numeric",
+            })} মাসের category-wise খরচ
+          </p>
+          {categoryTotals.length === 0 ? (
+            <p style={styles.empty}>এই মাসে category-wise দেখানোর মতো কোনো expense নেই।</p>
+          ) : (
+            <div style={styles.tableWrapper}>
+              <table style={styles.table}>
+                <thead>
+                  <tr>
+                    <th style={styles.th}>Category</th>
+                    <th style={styles.th}>Total BDT</th>
+                    <th style={styles.th}>Total USD</th>
+                    <th style={styles.th}>Entries</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {categoryTotals.map((item) => (
+                    <tr key={item.category}>
+                      <td style={styles.td}><strong>{item.category}</strong></td>
+                      <td style={styles.td}>৳{item.bdt.toLocaleString()}</td>
+                      <td style={styles.td}>${item.usd.toLocaleString()}</td>
+                      <td style={styles.td}>{item.count}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
 
         {/* ADD FORM */}
         <form onSubmit={addMoneyOut} style={styles.formCard}>
