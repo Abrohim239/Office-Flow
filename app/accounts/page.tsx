@@ -26,6 +26,7 @@ type Bill = {
 type Payment = {
   id: string;
   client_id: string;
+  bill_id: string | null;
   amount: number;
   currency: string;
   payment_date: string;
@@ -94,6 +95,7 @@ export default function AccountsPage() {
 
   const [paymentForm, setPaymentForm] = useState({
     client_id: "",
+    bill_id: "",
     amount: "",
     currency: "BDT",
     payment_date: new Date()
@@ -325,11 +327,26 @@ export default function AccountsPage() {
       return;
     }
 
+    if (!paymentForm.bill_id) {
+      alert("যে Bill-এর Payment পেয়েছেন, সেই Bill No. নির্বাচন করুন");
+      return;
+    }
+
     if (
       !paymentForm.amount ||
       Number(paymentForm.amount) <= 0
     ) {
       alert("Payment Amount দিন");
+      return;
+    }
+
+    const selectedBill = bills.find((bill) => bill.id === paymentForm.bill_id);
+    if (!selectedBill) {
+      alert("নির্বাচিত Bill পাওয়া যায়নি। আবার নির্বাচন করুন।");
+      return;
+    }
+    if (Number(paymentForm.amount) > getBillDue(selectedBill) + 0.000001) {
+      alert("Payment Amount Bill-এর বাকি Due-এর চেয়ে বেশি হতে পারবে না।");
       return;
     }
 
@@ -340,6 +357,8 @@ export default function AccountsPage() {
           {
             client_id:
               paymentForm.client_id,
+
+            bill_id: paymentForm.bill_id,
 
             amount:
               Number(
@@ -405,6 +424,7 @@ export default function AccountsPage() {
 
     setPaymentForm({
       client_id: "",
+      bill_id: "",
       amount: "",
       currency: "BDT",
       payment_date: new Date()
@@ -826,6 +846,31 @@ export default function AccountsPage() {
   const totalDueUSD =
     totalBillUSD -
     totalReceivedUSD;
+
+  // =====================================================
+  // BILL PAYMENT LEDGER
+  // =====================================================
+
+  function getBillPaid(billId: string) {
+    return payments
+      .filter((payment) => payment.bill_id === billId)
+      .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+  }
+
+  function getBillDue(bill: Bill) {
+    return Math.max(0, Number(bill.bill_amount || 0) - getBillPaid(bill.id));
+  }
+
+  const paymentFormBills = bills.filter((bill) =>
+    bill.client_id === paymentForm.client_id &&
+    getBillDue(bill) > 0
+  );
+
+  const ledgerBills = bills.map((bill) => ({
+    ...bill,
+    paidAmount: getBillPaid(bill.id),
+    dueAmount: getBillDue(bill),
+  }));
 
   // =====================================================
   // BILL HISTORY SEARCH
@@ -1255,6 +1300,7 @@ export default function AccountsPage() {
                     ...billForm,
                     client_id:
                       e.target.value,
+                    bill_id: "",
                   })
                 }
                 style={
@@ -1329,6 +1375,7 @@ export default function AccountsPage() {
                     ...billForm,
                     currency:
                       e.target.value,
+                    bill_id: "",
                   })
                 }
                 style={
@@ -1428,6 +1475,8 @@ export default function AccountsPage() {
                     ...paymentForm,
                     client_id:
                       e.target.value,
+                    bill_id: "",
+                    amount: "",
                   })
                 }
                 style={
@@ -1458,10 +1507,33 @@ export default function AccountsPage() {
 
               </select>
 
+              <select
+                value={paymentForm.bill_id}
+                onChange={(e) => {
+                  const selectedBill = bills.find((bill) => bill.id === e.target.value);
+                  setPaymentForm({
+                    ...paymentForm,
+                    bill_id: e.target.value,
+                    currency: selectedBill ? selectedBill.currency : paymentForm.currency,
+                    amount: selectedBill ? String(getBillDue(selectedBill).toFixed(2)) : "",
+                  });
+                }}
+                style={styles.input}
+                disabled={!paymentForm.client_id}
+              >
+                <option value="">-- Select Bill No. (Due Bills) --</option>
+                {paymentFormBills.map((bill) => (
+                  <option key={bill.id} value={bill.id}>
+                    {(bill.bill_number || "No Bill No.") + " | Due: " + (bill.currency === "USD" ? "$" : "৳") + getBillDue(bill).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " | " + bill.bill_date}
+                  </option>
+                ))}
+              </select>
+
               <input
                 type="number"
                 step="0.01"
                 placeholder="Received Amount"
+                max={paymentForm.bill_id ? getBillDue(bills.find((bill) => bill.id === paymentForm.bill_id) || ({ bill_amount: 0, id: "", client_id: "", bill_number: "", currency: paymentForm.currency, bill_date: "", note: null } as Bill)) : undefined}
                 value={
                   paymentForm.amount
                 }
@@ -2198,6 +2270,53 @@ export default function AccountsPage() {
 
           )}
 
+        </section>
+
+        {/* =================================================
+            BUYER BILL PAYMENT LEDGER
+        ================================================= */}
+        <section style={styles.section}>
+          <h2 style={styles.sectionTitle}>📒 Buyer Bill Payment Ledger</h2>
+          <p style={{ color: "#64748b", marginTop: 0 }}>
+            প্রতিটি Bill-এর Payment এখানে Bill No. অনুযায়ী মিলবে। Payment না দেওয়া Bill-গুলো Due থাকবে।
+          </p>
+          <div style={{ overflowX: "auto" }}>
+            <table style={styles.table}>
+              <thead>
+                <tr>
+                  <th style={styles.th}>Bill Date</th>
+                  <th style={styles.th}>Buyer</th>
+                  <th style={styles.th}>Bill No.</th>
+                  <th style={styles.th}>Bill Amount</th>
+                  <th style={styles.th}>Received</th>
+                  <th style={styles.th}>Due</th>
+                  <th style={styles.th}>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ledgerBills.length === 0 ? (
+                  <tr><td style={styles.td} colSpan={7}>কোনো Bill নেই।</td></tr>
+                ) : ledgerBills.map((bill) => {
+                  const currencySymbol = bill.currency === "USD" ? "$" : "৳";
+                  const status = bill.dueAmount <= 0.005 ? "Paid" : bill.paidAmount > 0 ? "Partial Paid" : "Unpaid";
+                  return (
+                    <tr key={bill.id}>
+                      <td style={styles.td}>{bill.bill_date}</td>
+                      <td style={styles.td}>{getClientName(bill.client_id)}</td>
+                      <td style={styles.td}>{bill.bill_number || "-"}</td>
+                      <td style={styles.td}>{currencySymbol}{Number(bill.bill_amount).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                      <td style={styles.td}>{currencySymbol}{bill.paidAmount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                      <td style={{ ...styles.td, color: bill.dueAmount > 0 ? "#dc2626" : "#16a34a", fontWeight: 700 }}>{currencySymbol}{bill.dueAmount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                      <td style={styles.td}><span style={{ display: "inline-block", padding: "5px 9px", borderRadius: 20, fontSize: 12, fontWeight: 700, color: status === "Paid" ? "#166534" : status === "Partial Paid" ? "#92400e" : "#b91c1c", background: status === "Paid" ? "#dcfce7" : status === "Partial Paid" ? "#fef3c7" : "#fee2e2" }}>{status}</span></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p style={{ color: "#92400e", background: "#fffbeb", padding: 12, borderRadius: 8, fontSize: 13 }}>
+            Note: এই Ledger-এ নতুন করে Bill No. নির্বাচন করে যোগ করা Payment-গুলোই সংশ্লিষ্ট Bill-এর সঙ্গে হিসাব হবে। আগের Payment-গুলো Bill-এর সঙ্গে link করা নেই, তাই সেগুলো Ledger-এ বরাদ্দ দেখাবে না।
+          </p>
         </section>
 
         {/* =================================================
