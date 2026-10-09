@@ -355,6 +355,11 @@ export default function AccountsPage() {
       }
     }
 
+    // One batch marker lets Payment History show one combined entry,
+    // while each payment remains linked to its own bill in the ledger.
+    const batchId = `BATCH-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const batchMarker = `[[payment_batch:${batchId}]]`;
+    const savedNote = [paymentForm.note.trim(), batchMarker].filter(Boolean).join("\n");
     const paymentRows = selectedBills.map((bill) => ({
       client_id: paymentForm.client_id,
       bill_id: bill.id,
@@ -363,7 +368,7 @@ export default function AccountsPage() {
       payment_date: paymentForm.payment_date,
       payment_method: paymentForm.payment_method,
       payment_status: paymentForm.payment_status,
-      note: paymentForm.note.trim() || null,
+      note: savedNote || batchMarker,
     }));
 
     const { data, error } = await supabase
@@ -415,38 +420,41 @@ export default function AccountsPage() {
     payment: Payment,
     newStatus: string
   ) {
+    const markerMatch = (payment.note || "").match(/\[\[payment_batch:([^\]]+)\]\]/);
+    const batchId = markerMatch?.[1];
+    const relatedPayments = batchId
+      ? payments.filter((item) => (item.note || "").includes(`[[payment_batch:${batchId}]]`))
+      : [payment];
     const previousStatus = payment.payment_status || "Factory Pending";
     if (newStatus === previousStatus) return;
 
+    const ids = relatedPayments.map((item) => item.id);
     const { error } = await supabase
       .from("client_payments")
       .update({ payment_status: newStatus })
-      .eq("id", payment.id);
+      .in("id", ids);
 
     if (error) {
       alert("Payment Status Update Error: " + error.message);
       return;
     }
 
+    const historyRows = relatedPayments.map((item) => ({
+      payment_id: item.id,
+      previous_status: item.payment_status || "Factory Pending",
+      new_status: newStatus,
+    }));
     const { error: historyError } = await supabase
       .from("client_payment_history")
-      .insert({
-        payment_id: payment.id,
-        previous_status: previousStatus,
-        new_status: newStatus,
-      });
+      .insert(historyRows);
 
     if (historyError) {
       alert("Status updated, but history could not be saved: " + historyError.message);
     }
 
-    setPayments((current) =>
-      current.map((item) =>
-        item.id === payment.id
-          ? { ...item, payment_status: newStatus }
-          : item
-      )
-    );
+    setPayments((current) => current.map((item) =>
+      ids.includes(item.id) ? { ...item, payment_status: newStatus } : item
+    ));
   }
 
   // =====================================================
@@ -565,38 +573,34 @@ export default function AccountsPage() {
   // DELETE PAYMENT
   // =====================================================
 
-  async function deletePayment(
-    id: string
-  ) {
-    if (
-      !confirm(
-        "এই Payment Entry Delete করতে চান?"
-      )
-    ) {
-      return;
-    }
+  async function deletePayment(id: string) {
+    const selectedPayment = payments.find((item) => item.id === id);
+    const markerMatch = (selectedPayment?.note || "").match(/\[\[payment_batch:([^\]]+)\]\]/);
+    const batchId = markerMatch?.[1];
+    const relatedPayments = batchId
+      ? payments.filter((item) => (item.note || "").includes(`[[payment_batch:${batchId}]]`))
+      : selectedPayment ? [selectedPayment] : [];
+    const ids = relatedPayments.map((item) => item.id);
+    const count = ids.length || 1;
 
-    const { error } =
-      await supabase
-        .from("client_payments")
-        .delete()
-        .eq("id", id);
+    if (!confirm(count > 1
+      ? `এই Combined Payment Entry (${count}টি Bill) Delete করতে চান?`
+      : "এই Payment Entry Delete করতে চান?")) return;
+
+    const { error } = await supabase
+      .from("client_payments")
+      .delete()
+      .in("id", ids.length ? ids : [id]);
 
     if (error) {
-      alert(
-        "Delete Error: " +
-          error.message
-      );
+      alert("Delete Error: " + error.message);
       return;
     }
 
-    if (
-      historyPayment?.id === id
-    ) {
+    if (historyPayment && ids.includes(historyPayment.id)) {
       setHistoryPayment(null);
       setPaymentHistory([]);
     }
-
     loadData();
   }
 
@@ -886,6 +890,26 @@ export default function AccountsPage() {
       currency.includes(query)
     );
   });
+
+  // Combine rows from the same multi-bill payment for Payment History only.
+  // The underlying rows remain individual so each bill's ledger stays accurate.
+  const groupedPayments: Payment[] = (() => {
+    const groups = new Map<string, Payment>();
+    for (const payment of payments) {
+      const match = (payment.note || "").match(/\[\[payment_batch:([^\]]+)\]\]/);
+      const batchId = match?.[1];
+      const key = batchId ? `${batchId}:${payment.currency}` : payment.id;
+      const existing = groups.get(key);
+      if (existing) {
+        groups.set(key, { ...existing, amount: Number(existing.amount) + Number(payment.amount) });
+      } else {
+        groups.set(key, { ...payment });
+      }
+    }
+    return Array.from(groups.values()).sort((a, b) =>
+      `${b.payment_date}${b.id}`.localeCompare(`${a.payment_date}${a.id}`)
+    );
+  })();
 
   // =====================================================
   // STATUS STYLE
@@ -2417,7 +2441,7 @@ export default function AccountsPage() {
 
                 <tbody>
 
-                  {payments.map(
+                  {groupedPayments.map(
                     (payment) => (
 
                       <tr
