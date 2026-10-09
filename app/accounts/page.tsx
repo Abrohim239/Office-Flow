@@ -1418,17 +1418,16 @@ export default function AccountsPage() {
                 value={
                   paymentForm.client_id
                 }
-                onChange={(e) =>
+                onChange={(e) => {
                   setPaymentForm({
                     ...paymentForm,
-                    client_id:
-                      e.target.value,
+                    client_id: e.target.value,
                     bill_id: "",
                     amount: "",
                   });
                   setSelectedPaymentBillIds([]);
                   setPaymentAllocations({});
-                }
+                }}
                 style={
                   styles.input
                 }
