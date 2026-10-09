@@ -67,6 +67,9 @@ export default function AccountsPage() {
   const [historyLoading, setHistoryLoading] =
     useState(false);
 
+  // Bill History search: client/buyer name, bill number, date, amount
+  const [billSearch, setBillSearch] = useState("");
+
   // =====================================================
   // FORMS
   // =====================================================
@@ -823,6 +826,29 @@ export default function AccountsPage() {
   const totalDueUSD =
     totalBillUSD -
     totalReceivedUSD;
+
+  // =====================================================
+  // BILL HISTORY SEARCH
+  // =====================================================
+
+  const filteredBills = bills.filter((bill) => {
+    const query = billSearch.trim().toLowerCase();
+    if (!query) return true;
+
+    const clientName = getClientName(bill.client_id).toLowerCase();
+    const billNumber = (bill.bill_number || "").toLowerCase();
+    const billDate = (bill.bill_date || "").toLowerCase();
+    const amount = String(bill.bill_amount ?? "").toLowerCase();
+    const currency = (bill.currency || "").toLowerCase();
+
+    return (
+      clientName.includes(query) ||
+      billNumber.includes(query) ||
+      billDate.includes(query) ||
+      amount.includes(query) ||
+      currency.includes(query)
+    );
+  });
 
   // =====================================================
   // STATUS STYLE
@@ -1975,8 +2001,27 @@ export default function AccountsPage() {
             🧾 Bill History
           </h2>
 
-          {bills.length ===
-          0 ? (
+          <div style={{ marginBottom: "16px" }}>
+            <input
+              type="search"
+              value={billSearch}
+              onChange={(e) => setBillSearch(e.target.value)}
+              placeholder="🔎 Buyer/Client Name, Bill No., Date, Amount দিয়ে Search করুন..."
+              style={{
+                ...styles.input,
+                maxWidth: "600px",
+                padding: "13px 15px",
+                border: "1px solid #cbd5e1",
+              }}
+            />
+            <p style={{ margin: "8px 0 0", color: "#64748b", fontSize: "13px" }}>
+              {billSearch.trim()
+                ? `Search result: ${filteredBills.length} of ${bills.length} bills`
+                : `Total bills: ${bills.length}`}
+            </p>
+          </div>
+
+          {bills.length === 0 ? (
 
             <p
               style={
@@ -1986,6 +2031,10 @@ export default function AccountsPage() {
               কোনো Bill নেই।
             </p>
 
+          ) : filteredBills.length === 0 ? (
+            <p style={styles.empty}>
+              এই Search-এর সাথে কোনো Bill মেলেনি। Buyer Name বা Bill Number আবার check করুন।
+            </p>
           ) : (
 
             <div
@@ -2050,7 +2099,7 @@ export default function AccountsPage() {
 
                 <tbody>
 
-                  {bills.map(
+                  {filteredBills.map(
                     (bill) => (
 
                       <tr
