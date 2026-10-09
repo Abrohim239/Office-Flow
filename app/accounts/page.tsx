@@ -71,6 +71,9 @@ export default function AccountsPage() {
   // Bill History search: client/buyer name, bill number, date, amount
   const [billSearch, setBillSearch] = useState("");
 
+  // Buyer Bill Payment Ledger search
+  const [ledgerSearch, setLedgerSearch] = useState("");
+
   // =====================================================
   // FORMS
   // =====================================================
@@ -871,6 +874,31 @@ export default function AccountsPage() {
     paidAmount: getBillPaid(bill.id),
     dueAmount: getBillDue(bill),
   }));
+
+  const filteredLedgerBills = ledgerBills.filter((bill) => {
+    const query = ledgerSearch.trim().toLowerCase();
+    if (!query) return true;
+
+    const buyerName = getClientName(bill.client_id).toLowerCase();
+    const billNumber = (bill.bill_number || "").toLowerCase();
+    const billDate = (bill.bill_date || "").toLowerCase();
+    const amount = String(bill.bill_amount ?? "").toLowerCase();
+    const currency = (bill.currency || "").toLowerCase();
+    const status = (bill.dueAmount <= 0.005
+      ? "paid"
+      : bill.paidAmount > 0
+        ? "partial paid"
+        : "unpaid").toLowerCase();
+
+    return (
+      buyerName.includes(query) ||
+      billNumber.includes(query) ||
+      billDate.includes(query) ||
+      amount.includes(query) ||
+      currency.includes(query) ||
+      status.includes(query)
+    );
+  });
 
   // =====================================================
   // BILL HISTORY SEARCH
@@ -2278,6 +2306,25 @@ export default function AccountsPage() {
           <p style={{ color: "#64748b", marginTop: 0 }}>
             প্রতিটি Bill-এর Payment এখানে Bill No. অনুযায়ী মিলবে। Payment না দেওয়া Bill-গুলো Due থাকবে।
           </p>
+          <div style={{ marginBottom: "16px" }}>
+            <input
+              type="search"
+              value={ledgerSearch}
+              onChange={(e) => setLedgerSearch(e.target.value)}
+              placeholder="🔎 Buyer Name, Bill No., Date, Amount বা Status দিয়ে Search করুন..."
+              style={{
+                ...styles.input,
+                maxWidth: "600px",
+                padding: "13px 15px",
+                border: "1px solid #cbd5e1",
+              }}
+            />
+            <p style={{ margin: "8px 0 0", color: "#64748b", fontSize: "13px" }}>
+              {ledgerSearch.trim()
+                ? `Search result: ${filteredLedgerBills.length} of ${ledgerBills.length} bills`
+                : `Total bills: ${ledgerBills.length}`}
+            </p>
+          </div>
           <div style={{ overflowX: "auto" }}>
             <table style={styles.table}>
               <thead>
@@ -2294,7 +2341,9 @@ export default function AccountsPage() {
               <tbody>
                 {ledgerBills.length === 0 ? (
                   <tr><td style={styles.td} colSpan={7}>কোনো Bill নেই।</td></tr>
-                ) : ledgerBills.map((bill) => {
+                ) : filteredLedgerBills.length === 0 ? (
+                  <tr><td style={styles.td} colSpan={7}>এই Search-এর সাথে কোনো Bill মেলেনি। Buyer Name বা Bill Number আবার check করুন।</td></tr>
+                ) : filteredLedgerBills.map((bill) => {
                   const currencySymbol = bill.currency === "USD" ? "$" : "৳";
                   const status = bill.dueAmount <= 0.005 ? "Paid" : bill.paidAmount > 0 ? "Partial Paid" : "Unpaid";
                   return (
