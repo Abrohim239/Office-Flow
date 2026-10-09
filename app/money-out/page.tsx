@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { createClient } from "../../lib/supabase/client";
 
 const supabase = createClient();
@@ -16,53 +16,19 @@ type MoneyOut = {
   note: string | null;
 };
 
-const categories = [
-  ["Supplier", "📦", "Supplier"],
-  ["Worker", "👷", "Worker"],
-  ["Salary", "👨‍💼", "Salary"],
-  ["Transport", "🚚", "Transport"],
-  ["Office", "🏢", "Office Expense"],
-  ["Rent", "🏠", "Rent"],
-  ["Utility", "💡", "Utility"],
-  ["Other", "📌", "Other"],
-];
-
-function monthKey(date: string) {
-  return date.slice(0, 7);
-}
-
-function monthLabel(key: string) {
-  const [year, month] = key.split("-");
-
-  return new Date(
-    Number(year),
-    Number(month) - 1,
-    1
-  ).toLocaleDateString("en-US", {
-    month: "long",
-    year: "numeric",
-  });
-}
-
 export default function MoneyOutPage() {
   const [records, setRecords] = useState<MoneyOut[]>([]);
   const [loading, setLoading] = useState(true);
-
-  const currentMonth = new Date()
-    .toISOString()
-    .slice(0, 7);
-
-  const [selectedMonth, setSelectedMonth] =
-    useState(currentMonth);
+  const [selectedMonth, setSelectedMonth] = useState(
+    new Date().toISOString().slice(0, 7)
+  );
 
   const [form, setForm] = useState({
     paid_to: "",
     amount: "",
     currency: "BDT",
     category: "Other",
-    payment_date: new Date()
-      .toISOString()
-      .split("T")[0],
+    payment_date: new Date().toISOString().split("T")[0],
     payment_method: "Cash",
     note: "",
   });
@@ -73,9 +39,7 @@ export default function MoneyOutPage() {
     const { data, error } = await supabase
       .from("money_out")
       .select("*")
-      .order("payment_date", {
-        ascending: false,
-      });
+      .order("payment_date", { ascending: false });
 
     if (error) {
       alert("Load Error: " + error.message);
@@ -91,180 +55,58 @@ export default function MoneyOutPage() {
     loadData();
   }, []);
 
-  // =========================
-  // AVAILABLE MONTHS
-  // =========================
+async function addMoneyOut(e: React.FormEvent) {
+  e.preventDefault();
 
-  const months = useMemo(() => {
-    const set = new Set<string>();
-
-    // Current month সবসময় থাকবে
-    set.add(currentMonth);
-
-    records.forEach((item) => {
-      if (item.payment_date) {
-        set.add(monthKey(item.payment_date));
-      }
-    });
-
-    return Array.from(set).sort().reverse();
-  }, [records, currentMonth]);
-
-  // =========================
-  // SELECTED MONTH DATA
-  // =========================
-
-  const selectedRecords = useMemo(() => {
-    return records.filter(
-      (item) =>
-        monthKey(item.payment_date) ===
-        selectedMonth
-    );
-  }, [records, selectedMonth]);
-
-  // =========================
-  // MONTHLY TOTAL
-  // =========================
-
-  const selectedBDT = selectedRecords
-    .filter((item) => item.currency === "BDT")
-    .reduce(
-      (sum, item) =>
-        sum + Number(item.amount || 0),
-      0
-    );
-
-  const selectedUSD = selectedRecords
-    .filter((item) => item.currency === "USD")
-    .reduce(
-      (sum, item) =>
-        sum + Number(item.amount || 0),
-      0
-    );
-
-  // =========================
-  // ALL TIME TOTAL
-  // =========================
-
-  const totalBDT = records
-    .filter((item) => item.currency === "BDT")
-    .reduce(
-      (sum, item) =>
-        sum + Number(item.amount || 0),
-      0
-    );
-
-  const totalUSD = records
-    .filter((item) => item.currency === "USD")
-    .reduce(
-      (sum, item) =>
-        sum + Number(item.amount || 0),
-      0
-    );
-
-  // =========================
-  // CATEGORY TOTAL
-  // =========================
-
-  function getCategoryTotal(
-    category: string,
-    currency: string
-  ) {
-    return selectedRecords
-      .filter(
-        (item) =>
-          item.category === category &&
-          item.currency === currency
-      )
-      .reduce(
-        (sum, item) =>
-          sum + Number(item.amount || 0),
-        0
-      );
+  if (!form.paid_to.trim()) {
+    alert("Paid To দিন");
+    return;
   }
 
-  // =========================
-  // ADD MONEY OUT
-  // =========================
-
-  async function addMoneyOut(
-    e: React.FormEvent
-  ) {
-    e.preventDefault();
-
-    if (!form.paid_to.trim()) {
-      alert("Paid To দিন");
-      return;
-    }
-
-    if (
-      !form.amount ||
-      Number(form.amount) <= 0
-    ) {
-      alert("Amount দিন");
-      return;
-    }
-
-    const { data, error } =
-      await supabase.rpc(
-        "add_money_out",
-        {
-          p_paid_to: form.paid_to.trim(),
-          p_amount: Number(form.amount),
-          p_currency: form.currency,
-          p_category: form.category,
-          p_payment_date: form.payment_date,
-          p_payment_method:
-            form.payment_method,
-          p_note:
-            form.note.trim() || null,
-        }
-      );
-
-    if (error) {
-      alert(
-        "Money Out Error: " +
-          error.message
-      );
-      return;
-    }
-
-    if (!data) {
-      alert("Money Out Save হয়নি।");
-      return;
-    }
-
-    alert(
-      "Money Out Added Successfully! 💸"
-    );
-
-    setForm({
-      paid_to: "",
-      amount: "",
-      currency: "BDT",
-      category: "Other",
-      payment_date: new Date()
-        .toISOString()
-        .split("T")[0],
-      payment_method: "Cash",
-      note: "",
-    });
-
-    loadData();
+  if (!form.amount || Number(form.amount) <= 0) {
+    alert("Amount দিন");
+    return;
   }
 
-  // =========================
-  // DELETE
-  // =========================
+  const { data, error } = await supabase.rpc(
+    "add_money_out",
+    {
+      p_paid_to: form.paid_to.trim(),
+      p_amount: Number(form.amount),
+      p_currency: form.currency,
+      p_category: form.category,
+      p_payment_date: form.payment_date,
+      p_payment_method: form.payment_method,
+      p_note: form.note.trim() || null,
+    }
+  );
 
+  if (error) {
+    alert("Money Out Error: " + error.message);
+    return;
+  }
+
+  if (!data) {
+    alert("Money Out Save হয়নি।");
+    return;
+  }
+
+  alert("Money Out Added Successfully! 💸");
+
+  setForm({
+    paid_to: "",
+    amount: "",
+    currency: "BDT",
+    category: "Other",
+    payment_date: new Date().toISOString().split("T")[0],
+    payment_method: "Cash",
+    note: "",
+  });
+
+  loadData();
+}
   async function deleteRecord(id: string) {
-    if (
-      !confirm(
-        "এই Expense Delete করতে চান?"
-      )
-    ) {
-      return;
-    }
+    if (!confirm("এই Expense Delete করতে চান?")) return;
 
     const { error } = await supabase
       .from("money_out")
@@ -272,319 +114,90 @@ export default function MoneyOutPage() {
       .eq("id", id);
 
     if (error) {
-      alert(
-        "Delete Error: " +
-          error.message
-      );
+      alert("Delete Error: " + error.message);
       return;
     }
 
     alert("Expense Deleted! 🗑️");
-
     loadData();
   }
+
+  const monthOptions = Array.from(
+    new Set([
+      new Date().toISOString().slice(0, 7),
+      ...records.map((item) => (item.payment_date || "").slice(0, 7)).filter(Boolean),
+    ])
+  ).sort((a, b) => b.localeCompare(a));
+
+  const monthlyRecords = records.filter(
+    (item) => (item.payment_date || "").slice(0, 7) === selectedMonth
+  );
+
+  const totalBDT = monthlyRecords
+    .filter((item) => item.currency === "BDT")
+    .reduce((sum, item) => sum + Number(item.amount || 0), 0);
+
+  const totalUSD = monthlyRecords
+    .filter((item) => item.currency === "USD")
+    .reduce((sum, item) => sum + Number(item.amount || 0), 0);
 
   return (
     <main style={styles.page}>
       <div style={styles.container}>
 
-        {/* =========================
-            HEADER
-        ========================= */}
-
+        {/* HEADER */}
         <div style={styles.header}>
-          <h1 style={styles.title}>
-            💸 Money Out
-          </h1>
-
-          <p style={styles.subtitle}>
-            Office Expense & Payment
-            Management
-          </p>
+          <div>
+            <h1 style={styles.title}>💸 Money Out</h1>
+            <p style={styles.subtitle}>
+              Office Expense & Payment Management
+            </p>
+          </div>
         </div>
 
-        {/* =========================
-            ALL TIME SUMMARY
-        ========================= */}
-
+        {/* SUMMARY */}
         <div style={styles.summaryGrid}>
 
           <div style={styles.card}>
-            <div style={styles.icon}>
-              💸
-            </div>
-
+            <div style={styles.icon}>💸</div>
             <div>
-              <div style={styles.label}>
-                Total Money Out
-              </div>
-
+              <div style={styles.label}>Selected Month Money Out (BDT)</div>
               <div style={styles.value}>
-                ৳
-                {totalBDT.toLocaleString()}
+                ৳{totalBDT.toLocaleString()}
               </div>
             </div>
           </div>
 
           <div style={styles.card}>
-            <div style={styles.icon}>
-              💵
-            </div>
-
+            <div style={styles.icon}>💵</div>
             <div>
-              <div style={styles.label}>
-                USD Out
-              </div>
-
+              <div style={styles.label}>Selected Month USD Out</div>
               <div style={styles.value}>
-                $
-                {totalUSD.toLocaleString()}
+                ${totalUSD.toLocaleString()}
               </div>
             </div>
           </div>
 
           <div style={styles.card}>
-            <div style={styles.icon}>
-              🧾
-            </div>
-
+            <div style={styles.icon}>🧾</div>
             <div>
-              <div style={styles.label}>
-                Total Entries
-              </div>
-
+              <div style={styles.label}>Total Entries</div>
               <div style={styles.value}>
-                {records.length}
+                {monthlyRecords.length}
               </div>
             </div>
           </div>
 
         </div>
 
-        {/* =========================
-            MONTHLY EXPENSE DASHBOARD
-        ========================= */}
+        {/* ADD FORM */}
+        <form onSubmit={addMoneyOut} style={styles.formCard}>
 
-        <section
-          style={
-            styles.categorySection
-          }
-        >
-
-          <div
-            style={
-              styles.categoryTop
-            }
-          >
-
-            <div>
-              <h2
-                style={
-                  styles.categoryTitle
-                }
-              >
-                📊 Monthly Expense by
-                Category
-              </h2>
-
-              <p
-                style={
-                  styles.categorySubtitle
-                }
-              >
-                Entry Date অনুযায়ী
-                নির্বাচিত মাসের খরচ
-                দেখাচ্ছে
-              </p>
-            </div>
-
-            {/* MONTH SELECT */}
-
-            <select
-              value={selectedMonth}
-              onChange={(e) =>
-                setSelectedMonth(
-                  e.target.value
-                )
-              }
-              style={
-                styles.monthSelect
-              }
-            >
-
-              {months.map((month) => (
-                <option
-                  key={month}
-                  value={month}
-                >
-                  {monthLabel(month)}
-                </option>
-              ))}
-
-            </select>
-
-          </div>
-
-          {/* SELECTED MONTH TOTAL */}
-
-          <div
-            style={
-              styles.monthTotalRow
-            }
-          >
-
-            <div
-              style={
-                styles.monthTotalCard
-              }
-            >
-              <span>
-                💰 {monthLabel(
-                  selectedMonth
-                )} BDT
-              </span>
-
-              <strong>
-                ৳
-                {selectedBDT.toLocaleString()}
-              </strong>
-            </div>
-
-            <div
-              style={
-                styles.monthTotalCard
-              }
-            >
-              <span>
-                💵 {monthLabel(
-                  selectedMonth
-                )} USD
-              </span>
-
-              <strong>
-                $
-                {selectedUSD.toLocaleString()}
-              </strong>
-            </div>
-
-            <div
-              style={
-                styles.monthTotalCard
-              }
-            >
-              <span>
-                🧾 Monthly Entries
-              </span>
-
-              <strong>
-                {selectedRecords.length}
-              </strong>
-            </div>
-
-          </div>
-
-          {/* CATEGORY CARDS */}
-
-          <div
-            style={
-              styles.categoryGrid
-            }
-          >
-
-            {categories.map(
-              ([
-                key,
-                icon,
-                name,
-              ]) => {
-
-                const bdt =
-                  getCategoryTotal(
-                    key,
-                    "BDT"
-                  );
-
-                const usd =
-                  getCategoryTotal(
-                    key,
-                    "USD"
-                  );
-
-                return (
-                  <div
-                    key={key}
-                    style={
-                      styles.categoryCard
-                    }
-                  >
-
-                    <div
-                      style={
-                        styles.categoryIcon
-                      }
-                    >
-                      {icon}
-                    </div>
-
-                    <div>
-
-                      <div
-                        style={
-                          styles.categoryName
-                        }
-                      >
-                        {name}
-                      </div>
-
-                      <div
-                        style={
-                          styles.categoryBDT
-                        }
-                      >
-                        ৳
-                        {bdt.toLocaleString()}
-                      </div>
-
-                      {usd > 0 && (
-                        <div
-                          style={
-                            styles.categoryUSD
-                          }
-                        >
-                          $
-                          {usd.toLocaleString()}
-                        </div>
-                      )}
-
-                    </div>
-
-                  </div>
-                );
-              }
-            )}
-
-          </div>
-
-        </section>
-
-        {/* =========================
-            ADD MONEY OUT
-        ========================= */}
-
-        <form
-          onSubmit={addMoneyOut}
-          style={styles.formCard}
-        >
-
-          <h2
-            style={styles.formTitle}
-          >
+          <h2 style={styles.formTitle}>
             ➕ Add Money Out
           </h2>
 
-          <div
-            style={styles.formGrid}
-          >
+          <div style={styles.formGrid}>
 
             <input
               placeholder="Paid To *"
@@ -592,8 +205,7 @@ export default function MoneyOutPage() {
               onChange={(e) =>
                 setForm({
                   ...form,
-                  paid_to:
-                    e.target.value,
+                  paid_to: e.target.value,
                 })
               }
               style={styles.input}
@@ -606,8 +218,7 @@ export default function MoneyOutPage() {
               onChange={(e) =>
                 setForm({
                   ...form,
-                  amount:
-                    e.target.value,
+                  amount: e.target.value,
                 })
               }
               style={styles.input}
@@ -618,21 +229,13 @@ export default function MoneyOutPage() {
               onChange={(e) =>
                 setForm({
                   ...form,
-                  currency:
-                    e.target.value,
+                  currency: e.target.value,
                 })
               }
               style={styles.input}
             >
-
-              <option value="BDT">
-                BDT (৳)
-              </option>
-
-              <option value="USD">
-                USD ($)
-              </option>
-
+              <option value="BDT">BDT (৳)</option>
+              <option value="USD">USD ($)</option>
             </select>
 
             <select
@@ -640,83 +243,49 @@ export default function MoneyOutPage() {
               onChange={(e) =>
                 setForm({
                   ...form,
-                  category:
-                    e.target.value,
+                  category: e.target.value,
                 })
               }
               style={styles.input}
             >
-
-              {categories.map(
-                ([
-                  key,
-                  ,
-                  name,
-                ]) => (
-                  <option
-                    key={key}
-                    value={key}
-                  >
-                    {name}
-                  </option>
-                )
-              )}
-
+              <option value="Supplier">Supplier</option>
+              <option value="Worker">Worker</option>
+              <option value="Salary">Salary</option>
+              <option value="Transport">Transport</option>
+              <option value="Office">Office Expense</option>
+              <option value="Rent">Rent</option>
+              <option value="Utility">Utility</option>
+              <option value="Other">Other</option>
             </select>
 
             <input
               type="date"
-              value={
-                form.payment_date
-              }
+              value={form.payment_date}
               onChange={(e) =>
                 setForm({
                   ...form,
-                  payment_date:
-                    e.target.value,
+                  payment_date: e.target.value,
                 })
               }
               style={styles.input}
             />
 
             <select
-              value={
-                form.payment_method
-              }
+              value={form.payment_method}
               onChange={(e) =>
                 setForm({
                   ...form,
-                  payment_method:
-                    e.target.value,
+                  payment_method: e.target.value,
                 })
               }
               style={styles.input}
             >
-
-              <option>
-                Cash
-              </option>
-
-              <option>
-                Bank
-              </option>
-
-              <option>
-                bKash
-              </option>
-
-              <option>
-                Nagad
-              </option>
-
-              <option>
-                Card
-              </option>
-
-              <option>
-                Other
-              </option>
-
+              <option value="Cash">Cash</option>
+              <option value="Bank">Bank</option>
+              <option value="bKash">bKash</option>
+              <option value="Nagad">Nagad</option>
+              <option value="Card">Card</option>
+              <option value="Other">Other</option>
             </select>
 
             <input
@@ -725,8 +294,7 @@ export default function MoneyOutPage() {
               onChange={(e) =>
                 setForm({
                   ...form,
-                  note:
-                    e.target.value,
+                  note: e.target.value,
                 })
               }
               style={styles.input}
@@ -734,213 +302,109 @@ export default function MoneyOutPage() {
 
           </div>
 
-          <button
-            type="submit"
-            style={styles.button}
-          >
+          <button type="submit" style={styles.button}>
             💸 Save Money Out
           </button>
 
         </form>
 
-        {/* =========================
-            MONEY OUT HISTORY
-        ========================= */}
+        {/* HISTORY */}
+        <section style={styles.section}>
 
-        <section
-          style={styles.section}
-        >
-
-          <h2
-            style={
-              styles.sectionTitle
-            }
-          >
-            📋 Money Out History
-          </h2>
+          <div style={styles.historyHeader}>
+            <h2 style={styles.sectionTitle}>
+              📋 Money Out History (Monthly Wise)
+            </h2>
+            <select
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              style={styles.monthSelect}
+              aria-label="Select month for Money Out History"
+            >
+              {monthOptions.map((month) => (
+                <option key={month} value={month}>
+                  {new Date(`${month}-01T12:00:00`).toLocaleDateString("en-US", {
+                    month: "long",
+                    year: "numeric",
+                  })}
+                </option>
+              ))}
+            </select>
+          </div>
 
           {loading ? (
-            <p>
-              Loading...
-            </p>
-          ) : records.length ===
-            0 ? (
-            <p
-              style={styles.empty}
-            >
-              এখনো কোনো Expense
-              Entry নেই।
+            <p>Loading...</p>
+          ) : monthlyRecords.length === 0 ? (
+            <p style={styles.empty}>
+              এই মাসে কোনো Expense Entry নেই। অন্য মাস দেখতে উপরের Month dropdown ব্যবহার করুন।
             </p>
           ) : (
-
-            <div
-              style={
-                styles.tableWrapper
-              }
-            >
-
-              <table
-                style={styles.table}
-              >
+            <div style={styles.tableWrapper}>
+              <table style={styles.table}>
 
                 <thead>
-
                   <tr>
-
-                    <th
-                      style={styles.th}
-                    >
-                      Date
-                    </th>
-
-                    <th
-                      style={styles.th}
-                    >
-                      Paid To
-                    </th>
-
-                    <th
-                      style={styles.th}
-                    >
-                      Category
-                    </th>
-
-                    <th
-                      style={styles.th}
-                    >
-                      Amount
-                    </th>
-
-                    <th
-                      style={styles.th}
-                    >
-                      Method
-                    </th>
-
-                    <th
-                      style={styles.th}
-                    >
-                      Note
-                    </th>
-
-                    <th
-                      style={styles.th}
-                    >
-                      Action
-                    </th>
-
+                    <th style={styles.th}>Date</th>
+                    <th style={styles.th}>Paid To</th>
+                    <th style={styles.th}>Category</th>
+                    <th style={styles.th}>Amount</th>
+                    <th style={styles.th}>Method</th>
+                    <th style={styles.th}>Note</th>
+                    <th style={styles.th}>Action</th>
                   </tr>
-
                 </thead>
 
                 <tbody>
+                  {monthlyRecords.map((item) => (
+                    <tr key={item.id}>
 
-                  {records.map(
-                    (item) => (
-                      <tr
-                        key={item.id}
-                      >
+                      <td style={styles.td}>
+                        {item.payment_date}
+                      </td>
 
-                        <td
-                          style={
-                            styles.td
+                      <td style={styles.td}>
+                        <strong>{item.paid_to}</strong>
+                      </td>
+
+                      <td style={styles.td}>
+                        {item.category}
+                      </td>
+
+                      <td style={styles.td}>
+                        <strong>
+                          {item.currency === "USD"
+                            ? "$"
+                            : "৳"}
+                          {Number(
+                            item.amount
+                          ).toLocaleString()}
+                        </strong>
+                      </td>
+
+                      <td style={styles.td}>
+                        {item.payment_method || "-"}
+                      </td>
+
+                      <td style={styles.td}>
+                        {item.note || "-"}
+                      </td>
+
+                      <td style={styles.td}>
+                        <button
+                          onClick={() =>
+                            deleteRecord(item.id)
                           }
+                          style={styles.deleteButton}
                         >
-                          {
-                            item.payment_date
-                          }
-                        </td>
+                          Delete
+                        </button>
+                      </td>
 
-                        <td
-                          style={
-                            styles.td
-                          }
-                        >
-                          <strong>
-                            {
-                              item.paid_to
-                            }
-                          </strong>
-                        </td>
-
-                        <td
-                          style={
-                            styles.td
-                          }
-                        >
-                          {
-                            item.category
-                          }
-                        </td>
-
-                        <td
-                          style={
-                            styles.td
-                          }
-                        >
-                          <strong>
-                            {item.currency ===
-                            "USD"
-                              ? "$"
-                              : "৳"}
-
-                            {Number(
-                              item.amount
-                            ).toLocaleString()}
-                          </strong>
-                        </td>
-
-                        <td
-                          style={
-                            styles.td
-                          }
-                        >
-                          {
-                            item.payment_method ||
-                            "-"
-                          }
-                        </td>
-
-                        <td
-                          style={
-                            styles.td
-                          }
-                        >
-                          {
-                            item.note ||
-                            "-"
-                          }
-                        </td>
-
-                        <td
-                          style={
-                            styles.td
-                          }
-                        >
-
-                          <button
-                            onClick={() =>
-                              deleteRecord(
-                                item.id
-                              )
-                            }
-                            style={
-                              styles.deleteButton
-                            }
-                          >
-                            Delete
-                          </button>
-
-                        </td>
-
-                      </tr>
-                    )
-                  )}
-
+                    </tr>
+                  ))}
                 </tbody>
 
               </table>
-
             </div>
           )}
 
@@ -951,16 +415,11 @@ export default function MoneyOutPage() {
   );
 }
 
-const styles: Record<
-  string,
-  React.CSSProperties
-> = {
-
+const styles: Record<string, React.CSSProperties> = {
   page: {
     minHeight: "100vh",
     padding: "30px",
-    background:
-      "#f5f7fb",
+    background: "#f5f7fb",
   },
 
   container: {
@@ -994,8 +453,7 @@ const styles: Record<
     background: "white",
     padding: "20px",
     borderRadius: "14px",
-    boxShadow:
-      "0 4px 15px rgba(0,0,0,0.06)",
+    boxShadow: "0 4px 15px rgba(0,0,0,0.06)",
     display: "flex",
     gap: "15px",
     alignItems: "center",
@@ -1016,114 +474,12 @@ const styles: Record<
     marginTop: "5px",
   },
 
-  categorySection: {
-    background: "white",
-    padding: "25px",
-    borderRadius: "14px",
-    marginBottom: "25px",
-    boxShadow:
-      "0 4px 15px rgba(0,0,0,0.06)",
-  },
-
-  categoryTop: {
-    display: "flex",
-    justifyContent:
-      "space-between",
-    alignItems: "center",
-    gap: "15px",
-    flexWrap: "wrap",
-    marginBottom: "18px",
-  },
-
-  categoryTitle: {
-    margin: 0,
-    fontSize: "22px",
-  },
-
-  categorySubtitle: {
-    marginTop: "6px",
-    marginBottom: 0,
-    color: "#777",
-    fontSize: "14px",
-  },
-
-  monthSelect: {
-    padding: "11px 14px",
-    border:
-      "1px solid #d1d5db",
-    borderRadius: "8px",
-    background: "white",
-    fontSize: "14px",
-    minWidth: "190px",
-  },
-
-  monthTotalRow: {
-    display: "grid",
-    gridTemplateColumns:
-      "repeat(auto-fit, minmax(220px, 1fr))",
-    gap: "12px",
-    marginBottom: "15px",
-  },
-
-  monthTotalCard: {
-    background: "#f8fafc",
-    border:
-      "1px solid #e5e7eb",
-    borderRadius: "10px",
-    padding: "14px",
-    display: "flex",
-    justifyContent:
-      "space-between",
-    gap: "10px",
-  },
-
-  categoryGrid: {
-    display: "grid",
-    gridTemplateColumns:
-      "repeat(auto-fit, minmax(190px, 1fr))",
-    gap: "14px",
-  },
-
-  categoryCard: {
-    background: "#f8fafc",
-    border:
-      "1px solid #e5e7eb",
-    borderRadius: "12px",
-    padding: "16px",
-    display: "flex",
-    alignItems: "center",
-    gap: "12px",
-  },
-
-  categoryIcon: {
-    fontSize: "28px",
-  },
-
-  categoryName: {
-    fontSize: "14px",
-    color: "#666",
-    marginBottom: "4px",
-  },
-
-  categoryBDT: {
-    fontSize: "20px",
-    fontWeight: 700,
-  },
-
-  categoryUSD: {
-    fontSize: "14px",
-    color: "#2563eb",
-    fontWeight: 600,
-    marginTop: "3px",
-  },
-
   formCard: {
     background: "white",
     padding: "25px",
     borderRadius: "14px",
     marginBottom: "25px",
-    boxShadow:
-      "0 4px 15px rgba(0,0,0,0.06)",
+    boxShadow: "0 4px 15px rgba(0,0,0,0.06)",
   },
 
   formTitle: {
@@ -1143,8 +499,7 @@ const styles: Record<
     width: "100%",
     boxSizing: "border-box",
     padding: "12px",
-    border:
-      "1px solid #d1d5db",
+    border: "1px solid #d1d5db",
     borderRadius: "8px",
     fontSize: "14px",
     background: "white",
@@ -1154,8 +509,7 @@ const styles: Record<
     border: "none",
     background: "#dc2626",
     color: "white",
-    padding:
-      "12px 18px",
+    padding: "12px 18px",
     borderRadius: "8px",
     cursor: "pointer",
     fontWeight: 600,
@@ -1165,13 +519,30 @@ const styles: Record<
     background: "white",
     padding: "25px",
     borderRadius: "14px",
-    boxShadow:
-      "0 4px 15px rgba(0,0,0,0.06)",
+    boxShadow: "0 4px 15px rgba(0,0,0,0.06)",
   },
 
   sectionTitle: {
     marginTop: 0,
     marginBottom: "18px",
+  },
+
+  historyHeader: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "12px",
+    flexWrap: "wrap",
+    marginBottom: "18px",
+  },
+
+  monthSelect: {
+    minWidth: "190px",
+    padding: "10px 12px",
+    border: "1px solid #d1d5db",
+    borderRadius: "8px",
+    background: "white",
+    fontSize: "14px",
   },
 
   tableWrapper: {
@@ -1180,8 +551,7 @@ const styles: Record<
 
   table: {
     width: "100%",
-    borderCollapse:
-      "collapse",
+    borderCollapse: "collapse",
     minWidth: "900px",
   },
 
@@ -1189,22 +559,19 @@ const styles: Record<
     textAlign: "left",
     padding: "12px",
     background: "#f3f4f6",
-    borderBottom:
-      "1px solid #ddd",
+    borderBottom: "1px solid #ddd",
   },
 
   td: {
     padding: "12px",
-    borderBottom:
-      "1px solid #eee",
+    borderBottom: "1px solid #eee",
   },
 
   deleteButton: {
     border: "none",
     background: "#fee2e2",
     color: "#dc2626",
-    padding:
-      "7px 10px",
+    padding: "7px 10px",
     borderRadius: "6px",
     cursor: "pointer",
   },
