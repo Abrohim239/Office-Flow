@@ -47,6 +47,8 @@ export default function AccountsPage() {
   const [clients, setClients] = useState<Client[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
+  const [selectedPaymentBillIds, setSelectedPaymentBillIds] = useState<string[]>([]);
+  const [paymentAllocations, setPaymentAllocations] = useState<Record<string, string>>({});
 
   const [loading, setLoading] = useState(true);
 
@@ -320,174 +322,88 @@ export default function AccountsPage() {
   // ADD PAYMENT
   // =====================================================
 
-  async function addPayment(
-    e: React.FormEvent
-  ) {
+  async function addPayment(e: React.FormEvent) {
     e.preventDefault();
 
     if (!paymentForm.client_id) {
       alert("Client Select করুন");
       return;
     }
-
-    if (!paymentForm.bill_id) {
-      alert("যে Bill-এর Payment পেয়েছেন, সেই Bill No. নির্বাচন করুন");
+    if (selectedPaymentBillIds.length === 0) {
+      alert("এক বা একাধিক Bill নির্বাচন করুন");
       return;
     }
 
-    if (
-      !paymentForm.amount ||
-      Number(paymentForm.amount) <= 0
-    ) {
-      alert("Payment Amount দিন");
-      return;
-    }
+    const selectedBills = selectedPaymentBillIds
+      .map((id) => bills.find((bill) => bill.id === id))
+      .filter((bill): bill is Bill => Boolean(bill));
 
-    const selectedBill = bills.find((bill) => bill.id === paymentForm.bill_id);
-    if (!selectedBill) {
+    if (selectedBills.length !== selectedPaymentBillIds.length) {
       alert("নির্বাচিত Bill পাওয়া যায়নি। আবার নির্বাচন করুন।");
       return;
     }
-    if (Number(paymentForm.amount) > getBillDue(selectedBill) + 0.000001) {
-      alert("Payment Amount Bill-এর বাকি Due-এর চেয়ে বেশি হতে পারবে না।");
-      return;
-    }
 
-    const { data, error } =
-      await supabase
-        .from("client_payments")
-        .insert([
-          {
-            client_id:
-              paymentForm.client_id,
-
-            bill_id: paymentForm.bill_id,
-
-            amount:
-              Number(
-                paymentForm.amount
-              ),
-
-            currency:
-              paymentForm.currency,
-
-            payment_date:
-              paymentForm.payment_date,
-
-            payment_method:
-              paymentForm.payment_method,
-
-            payment_status:
-              paymentForm.payment_status,
-
-            note:
-              paymentForm.note.trim() ||
-              null,
-          },
-        ])
-        .select()
-        .single();
-
-    if (error) {
-      alert(
-        "Payment Add Error: " +
-          error.message
-      );
-      return;
-    }
-
-    // Initial history
-    if (data) {
-      const {
-        error: historyError,
-      } = await supabase
-        .from(
-          "client_payment_history"
-        )
-        .insert([
-          {
-            payment_id: data.id,
-            previous_status: null,
-            new_status:
-              paymentForm.payment_status,
-          },
-        ]);
-
-      if (historyError) {
-        console.log(
-          "Initial payment history error:",
-          historyError.message
-        );
+    for (const bill of selectedBills) {
+      const amount = Number(paymentAllocations[bill.id] || 0);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        alert(`Bill ${bill.bill_number || "(No Bill No.)"}-এর Payment Amount দিন।`);
+        return;
+      }
+      if (amount > getBillDue(bill) + 0.000001) {
+        alert(`Bill ${bill.bill_number || "(No Bill No.)"}-এর Amount বাকি Due-এর চেয়ে বেশি।`);
+        return;
       }
     }
 
-    alert(
-      "Payment Received Added! 💰"
-    );
+    const paymentRows = selectedBills.map((bill) => ({
+      client_id: paymentForm.client_id,
+      bill_id: bill.id,
+      amount: Number(paymentAllocations[bill.id]),
+      currency: bill.currency,
+      payment_date: paymentForm.payment_date,
+      payment_method: paymentForm.payment_method,
+      payment_status: paymentForm.payment_status,
+      note: paymentForm.note.trim() || null,
+    }));
 
+    const { data, error } = await supabase
+      .from("client_payments")
+      .insert(paymentRows)
+      .select();
+
+    if (error) {
+      alert("Payment Add Error: " + error.message);
+      return;
+    }
+
+    if (data && data.length > 0) {
+      const historyRows = data.map((payment: Payment) => ({
+        payment_id: payment.id,
+        previous_status: null,
+        new_status: paymentForm.payment_status,
+      }));
+      const { error: historyError } = await supabase
+        .from("client_payment_history")
+        .insert(historyRows);
+      if (historyError) {
+        console.log("Initial payment history error:", historyError.message);
+      }
+    }
+
+    alert(`Payment Received Added! 💰\n${selectedBills.length}টি Bill-এ Payment entry হয়েছে।`);
     setPaymentForm({
       client_id: "",
       bill_id: "",
       amount: "",
       currency: "BDT",
-      payment_date: new Date()
-        .toISOString()
-        .split("T")[0],
+      payment_date: new Date().toISOString().split("T")[0],
       payment_method: "Cash",
-      payment_status:
-        "Factory Pending",
+      payment_status: "Factory Pending",
       note: "",
     });
-
+    setSelectedPaymentBillIds([]);
+    setPaymentAllocations({});
     setShowPaymentForm(false);
-
-    loadData();
-  }
-
-  // =====================================================
-  // UPDATE PAYMENT STATUS
-  // =====================================================
-
-  async function updatePaymentStatus(
-    payment: Payment,
-    newStatus: string
-  ) {
-    const oldStatus =
-      payment.payment_status ||
-      "Factory Pending";
-
-    if (oldStatus === newStatus) {
-      return;
-    }
-
-    const { data, error } =
-      await supabase.rpc(
-        "update_client_payment_status",
-        {
-          p_payment_id: payment.id,
-          p_new_status: newStatus,
-        }
-      );
-
-    if (error) {
-      alert(
-        "Payment Status Update Error: " +
-          error.message
-      );
-      return;
-    }
-
-    if (!data) {
-      alert(
-        "Payment Status Update হয়নি।"
-      );
-      return;
-    }
-
-    alert(
-      "Payment Status Updated! ✅"
-    );
-
     loadData();
   }
 
@@ -1509,7 +1425,9 @@ export default function AccountsPage() {
                       e.target.value,
                     bill_id: "",
                     amount: "",
-                  })
+                  });
+                  setSelectedPaymentBillIds([]);
+                  setPaymentAllocations({});
                 }
                 style={
                   styles.input
@@ -1539,73 +1457,58 @@ export default function AccountsPage() {
 
               </select>
 
-              <select
-                value={paymentForm.bill_id}
-                onChange={(e) => {
-                  const selectedBill = bills.find((bill) => bill.id === e.target.value);
-                  setPaymentForm({
-                    ...paymentForm,
-                    bill_id: e.target.value,
-                    currency: selectedBill ? selectedBill.currency : paymentForm.currency,
-                    amount: selectedBill ? String(getBillDue(selectedBill).toFixed(2)) : "",
-                  });
-                }}
-                style={styles.input}
-                disabled={!paymentForm.client_id}
-              >
-                <option value="">-- Select Bill No. (Due Bills) --</option>
-                {paymentFormBills.map((bill) => (
-                  <option key={bill.id} value={bill.id}>
-                    {(bill.bill_number || "No Bill No.") + " | Due: " + (bill.currency === "USD" ? "$" : "৳") + getBillDue(bill).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " | " + bill.bill_date}
-                  </option>
-                ))}
-              </select>
-
-              <input
-                type="number"
-                step="0.01"
-                placeholder="Received Amount"
-                max={paymentForm.bill_id ? getBillDue(bills.find((bill) => bill.id === paymentForm.bill_id) || ({ bill_amount: 0, id: "", client_id: "", bill_number: "", currency: paymentForm.currency, bill_date: "", note: null } as Bill)) : undefined}
-                value={
-                  paymentForm.amount
-                }
-                onChange={(e) =>
-                  setPaymentForm({
-                    ...paymentForm,
-                    amount:
-                      e.target.value,
-                  })
-                }
-                style={
-                  styles.input
-                }
-              />
-
-              <select
-                value={
-                  paymentForm.currency
-                }
-                onChange={(e) =>
-                  setPaymentForm({
-                    ...paymentForm,
-                    currency:
-                      e.target.value,
-                  })
-                }
-                style={
-                  styles.input
-                }
-              >
-
-                <option value="BDT">
-                  BDT (৳)
-                </option>
-
-                <option value="USD">
-                  USD ($)
-                </option>
-
-              </select>
+              <div style={{ gridColumn: "1 / -1", border: "1px solid #dbe2ea", borderRadius: 10, padding: 12 }}>
+                <div style={{ fontWeight: 700, marginBottom: 8 }}>একই Payment-এ একাধিক Bill নির্বাচন করুন</div>
+                {!paymentForm.client_id ? (
+                  <p style={{ margin: 0, color: "#64748b" }}>আগে Client নির্বাচন করুন।</p>
+                ) : paymentFormBills.length === 0 ? (
+                  <p style={{ margin: 0, color: "#64748b" }}>এই Client-এর কোনো Due Bill নেই।</p>
+                ) : (
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {paymentFormBills.map((bill) => {
+                      const checked = selectedPaymentBillIds.includes(bill.id);
+                      const symbol = bill.currency === "USD" ? "$" : "৳";
+                      return (
+                        <div key={bill.id} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(150px, 220px)", gap: 10, alignItems: "center", padding: 10, background: checked ? "#f0f9ff" : "#f8fafc", borderRadius: 8 }}>
+                          <label style={{ display: "flex", gap: 8, alignItems: "flex-start", cursor: "pointer" }}>
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedPaymentBillIds((prev) => [...prev, bill.id]);
+                                  setPaymentAllocations((prev) => ({ ...prev, [bill.id]: String(getBillDue(bill).toFixed(2)) }));
+                                } else {
+                                  setSelectedPaymentBillIds((prev) => prev.filter((id) => id !== bill.id));
+                                  setPaymentAllocations((prev) => { const next = { ...prev }; delete next[bill.id]; return next; });
+                                }
+                              }}
+                            />
+                            <span>
+                              <strong>{bill.bill_number || "No Bill No."}</strong>
+                              <span style={{ display: "block", fontSize: 12, color: "#64748b" }}>{bill.bill_date} · Due: {symbol}{getBillDue(bill).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            </span>
+                          </label>
+                          <input
+                            type="number"
+                            min="0.01"
+                            step="0.01"
+                            max={getBillDue(bill)}
+                            disabled={!checked}
+                            placeholder="Payment for this bill"
+                            value={paymentAllocations[bill.id] || ""}
+                            onChange={(e) => setPaymentAllocations((prev) => ({ ...prev, [bill.id]: e.target.value }))}
+                            style={{ ...styles.input, margin: 0, opacity: checked ? 1 : 0.6 }}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                <p style={{ margin: "10px 0 0", fontSize: 13, color: "#475569" }}>
+                  Selected: {selectedPaymentBillIds.length} Bill · Total entry: {selectedPaymentBillIds.reduce((sum, id) => sum + Number(paymentAllocations[id] || 0), 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+              </div>
 
               <input
                 type="date"
