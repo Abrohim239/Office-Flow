@@ -408,6 +408,48 @@ export default function AccountsPage() {
   }
 
   // =====================================================
+  // UPDATE PAYMENT STATUS
+  // =====================================================
+
+  async function updatePaymentStatus(
+    payment: Payment,
+    newStatus: string
+  ) {
+    const previousStatus = payment.payment_status || "Factory Pending";
+    if (newStatus === previousStatus) return;
+
+    const { error } = await supabase
+      .from("client_payments")
+      .update({ payment_status: newStatus })
+      .eq("id", payment.id);
+
+    if (error) {
+      alert("Payment Status Update Error: " + error.message);
+      return;
+    }
+
+    const { error: historyError } = await supabase
+      .from("client_payment_history")
+      .insert({
+        payment_id: payment.id,
+        previous_status: previousStatus,
+        new_status: newStatus,
+      });
+
+    if (historyError) {
+      alert("Status updated, but history could not be saved: " + historyError.message);
+    }
+
+    setPayments((current) =>
+      current.map((item) =>
+        item.id === payment.id
+          ? { ...item, payment_status: newStatus }
+          : item
+      )
+    );
+  }
+
+  // =====================================================
   // SHOW PAYMENT HISTORY
   // =====================================================
 
