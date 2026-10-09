@@ -875,28 +875,34 @@ export default function AccountsPage() {
     dueAmount: getBillDue(bill),
   }));
 
+  const normalizeLedgerSearch = (value: unknown) =>
+    String(value ?? "")
+      .normalize("NFKC")
+      .toLocaleLowerCase()
+      .replace(/[^\p{L}\p{N}]/gu, "");
+
   const filteredLedgerBills = ledgerBills.filter((bill) => {
-    const query = ledgerSearch.trim().toLowerCase();
-    if (!query) return true;
+    const rawQuery = ledgerSearch.trim().toLocaleLowerCase();
+    if (!rawQuery) return true;
 
-    const buyerName = getClientName(bill.client_id).toLowerCase();
-    const billNumber = (bill.bill_number || "").toLowerCase();
-    const billDate = (bill.bill_date || "").toLowerCase();
-    const amount = String(bill.bill_amount ?? "").toLowerCase();
-    const currency = (bill.currency || "").toLowerCase();
-    const status = (bill.dueAmount <= 0.005
-      ? "paid"
+    // Match both the normal text and a normalized version. This handles
+    // small differences such as "IFL- New Yorker" vs "IFL-New Yorker".
+    const query = normalizeLedgerSearch(rawQuery);
+    const buyerName = getClientName(bill.client_id);
+    const billNumber = bill.bill_number || "";
+    const billDate = bill.bill_date || "";
+    const amount = String(bill.bill_amount ?? "");
+    const currency = bill.currency || "";
+    const status = bill.dueAmount <= 0.005
+      ? "Paid"
       : bill.paidAmount > 0
-        ? "partial paid"
-        : "unpaid").toLowerCase();
+        ? "Partial Paid"
+        : "Unpaid";
 
-    return (
-      buyerName.includes(query) ||
-      billNumber.includes(query) ||
-      billDate.includes(query) ||
-      amount.includes(query) ||
-      currency.includes(query) ||
-      status.includes(query)
+    const searchableFields = [buyerName, billNumber, billDate, amount, currency, status];
+    return searchableFields.some((field) =>
+      String(field).toLocaleLowerCase().includes(rawQuery) ||
+      (query.length > 0 && normalizeLedgerSearch(field).includes(query))
     );
   });
 
