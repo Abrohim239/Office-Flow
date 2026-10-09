@@ -1300,7 +1300,6 @@ export default function AccountsPage() {
                     ...billForm,
                     client_id:
                       e.target.value,
-                    bill_id: "",
                   })
                 }
                 style={
@@ -1375,7 +1374,6 @@ export default function AccountsPage() {
                     ...billForm,
                     currency:
                       e.target.value,
-                    bill_id: "",
                   })
                 }
                 style={
