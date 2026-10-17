@@ -34,6 +34,17 @@ type TaskUpdate = {
   created_at: string;
 };
 
+type DeliveryRecord = {
+  id: string;
+  task_id: string;
+  task_name: string;
+  employee_name: string;
+  delivered_quantity: number;
+  cumulative_completed_quantity: number;
+  note: string | null;
+  created_at: string;
+};
+
 export default function TasksPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -47,6 +58,7 @@ export default function TasksPage() {
 
   const [historyTask, setHistoryTask] = useState<Task | null>(null);
   const [history, setHistory] = useState<TaskUpdate[]>([]);
+  const [deliveryHistory, setDeliveryHistory] = useState<DeliveryRecord[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
 
   const [form, setForm] = useState({
@@ -201,6 +213,31 @@ export default function TasksPage() {
     setShowForm(true);
   }
 
+  // Every successful edit/update records the employee responsible for that partial delivery.
+  // delivered_quantity is the increase since the previous saved cumulative quantity.
+  async function recordDelivery(
+    task: Task,
+    employeeName: string,
+    newCumulativeQty: number,
+    note: string
+  ) {
+    if (!employeeName.trim()) return null;
+
+    const previousQty = Number(task.completed_quantity || 0);
+    const deliveredQty = Math.max(0, newCumulativeQty - previousQty);
+
+    const { error } = await supabase.from("office_task_deliveries").insert([{
+      task_id: String(task.id),
+      task_name: task.task_name,
+      employee_name: employeeName.trim(),
+      delivered_quantity: deliveredQty,
+      cumulative_completed_quantity: newCumulativeQty,
+      note,
+    }]);
+
+    return error;
+  }
+
   // =========================
   // SAVE TASK
   // =========================
@@ -239,6 +276,22 @@ export default function TasksPage() {
       error = result.error;
 
       if (!error) {
+        const assignmentChanged = (editingTask.assigned_to || "") !== (taskData.assigned_to || "");
+        const quantityChanged = Number(editingTask.completed_quantity || 0) !== taskData.completed_quantity;
+
+        if (assignmentChanged || quantityChanged) {
+          const deliveryError = await recordDelivery(
+            editingTask,
+            taskData.assigned_to,
+            taskData.completed_quantity,
+            `Task Edit/Update; previous assigned: ${editingTask.assigned_to || "-"}; new assigned: ${taskData.assigned_to || "-"}`
+          );
+
+          if (deliveryError) {
+            alert("Task updated, but employee delivery record save হয়নি: " + deliveryError.message + "\nSupabase SQL setup চালানো হয়েছে কি না দেখুন।");
+          }
+        }
+
         const { error: historyError } = await supabase.rpc(
           "add_office_task_history",
           {
@@ -326,6 +379,19 @@ export default function TasksPage() {
       return;
     }
 
+    if (finalQty !== Number(task.completed_quantity || 0)) {
+      const deliveryError = await recordDelivery(
+        task,
+        task.assigned_to || "",
+        finalQty,
+        "Quick status update"
+      );
+
+      if (deliveryError) {
+        alert("Quantity updated, but employee delivery record save হয়নি: " + deliveryError.message + "\nSupabase SQL setup চালানো হয়েছে কি না দেখুন।");
+      }
+    }
+
     const { error: historyError } = await supabase.rpc(
       "add_office_task_history",
       {
@@ -356,24 +422,34 @@ export default function TasksPage() {
   async function showHistory(task: Task) {
     setHistoryTask(task);
     setHistory([]);
+    setDeliveryHistory([]);
     setHistoryLoading(true);
 
-    const { data, error } = await supabase
-      .from("office_task_updates")
-      .select(
-        "id, previous_status, new_status, completed_quantity, note, created_at"
-      )
-      .eq("task_id", task.id)
-      .order("created_at", { ascending: false });
+    const [historyResult, deliveryResult] = await Promise.all([
+      supabase
+        .from("office_task_updates")
+        .select("id, previous_status, new_status, completed_quantity, note, created_at")
+        .eq("task_id", task.id)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("office_task_deliveries")
+        .select("id, task_id, task_name, employee_name, delivered_quantity, cumulative_completed_quantity, note, created_at")
+        .eq("task_id", String(task.id))
+        .order("created_at", { ascending: false }),
+    ]);
 
     setHistoryLoading(false);
 
-    if (error) {
-      alert("History Error: " + error.message);
+    if (historyResult.error) {
+      alert("History Error: " + historyResult.error.message);
       return;
     }
+    if (deliveryResult.error) {
+      alert("Delivery History Error: " + deliveryResult.error.message + "\nSupabase SQL setup চালানো হয়েছে কি না দেখুন।");
+    }
 
-    setHistory(data || []);
+    setHistory(historyResult.data || []);
+    setDeliveryHistory(deliveryResult.data || []);
   }
 
   // =========================
@@ -984,67 +1060,37 @@ export default function TasksPage() {
               <div style={historyEmptyStyle}>
                 Loading history...
               </div>
-            ) : history.length === 0 ? (
-              <div style={historyEmptyStyle}>
-                এই Task-এর কোনো update history নেই।
-              </div>
             ) : (
-              <div>
-                {history.map((item) => (
-                  <div
-                    key={item.id}
-                    style={historyItemStyle}
-                  >
-                    <div
-                      style={{
-                        fontWeight: "700",
-                        marginBottom: "7px",
-                      }}
-                    >
-                      {item.previous_status || "New"}
-                      {" → "}
-                      {item.new_status}
+              <>
+                <h3 style={{ margin: "0 0 10px" }}>📦 Employee Partial Delivery Records</h3>
+                {deliveryHistory.length === 0 ? (
+                  <div style={{ ...historyEmptyStyle, padding: "18px 10px" }}>
+                    এখনো কোনো Employee Delivery Record নেই। SQL setup-এর পর নতুন Update থেকে Record জমা হবে।
+                  </div>
+                ) : deliveryHistory.map((item) => (
+                  <div key={item.id} style={historyItemStyle}>
+                    <div style={{ fontWeight: 700, marginBottom: 6 }}>👤 {item.employee_name}</div>
+                    <div style={{ fontSize: 14, color: "#555" }}>
+                      📦 এই Update-এ Qty: <strong>{Number(item.delivered_quantity || 0)}</strong>
+                      {" · "}মোট Completed: <strong>{Number(item.cumulative_completed_quantity || 0)}</strong>
                     </div>
-
-                    <div
-                      style={{
-                        fontSize: "14px",
-                        color: "#555",
-                      }}
-                    >
-                      📦 Completed Quantity:{" "}
-                      <strong>
-                        {item.completed_quantity}
-                      </strong>
-                    </div>
-
-                    {item.note && (
-                      <div
-                        style={{
-                          fontSize: "14px",
-                          color: "#555",
-                          marginTop: "5px",
-                        }}
-                      >
-                        📝 {item.note}
-                      </div>
-                    )}
-
-                    <div
-                      style={{
-                        fontSize: "12px",
-                        color: "#888",
-                        marginTop: "7px",
-                      }}
-                    >
-                      🕒{" "}
-                      {new Date(
-                        item.created_at
-                      ).toLocaleString()}
-                    </div>
+                    {item.note && <div style={{ fontSize: 13, color: "#666", marginTop: 5 }}>📝 {item.note}</div>}
+                    <div style={{ fontSize: 12, color: "#888", marginTop: 7 }}>🕒 {new Date(item.created_at).toLocaleString()}</div>
                   </div>
                 ))}
-              </div>
+
+                <h3 style={{ margin: "22px 0 10px" }}>📜 Task Status History</h3>
+                {history.length === 0 ? (
+                  <div style={{ ...historyEmptyStyle, padding: "18px 10px" }}>এই Task-এর কোনো status history নেই।</div>
+                ) : history.map((item) => (
+                  <div key={item.id} style={historyItemStyle}>
+                    <div style={{ fontWeight: 700, marginBottom: 7 }}>{item.previous_status || "New"}{" → "}{item.new_status}</div>
+                    <div style={{ fontSize: 14, color: "#555" }}>📦 Completed Quantity: <strong>{item.completed_quantity}</strong></div>
+                    {item.note && <div style={{ fontSize: 14, color: "#555", marginTop: 5 }}>📝 {item.note}</div>}
+                    <div style={{ fontSize: 12, color: "#888", marginTop: 7 }}>🕒 {new Date(item.created_at).toLocaleString()}</div>
+                  </div>
+                ))}
+              </>
             )}
           </div>
         </div>
