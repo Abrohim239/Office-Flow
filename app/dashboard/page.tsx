@@ -1,898 +1,1707 @@
-
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { supabase, supabaseReady } from "@/lib/supabase";
-import {
-  LayoutDashboard, Package, ShoppingBag, Wallet, RefreshCw, Plus,
-  Menu, X, ArrowUpRight, AlertCircle, Download, LogOut, TrendingUp, Pencil, Trash2,
-  TrendingDown, CalendarDays
-} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { createClient } from "../../lib/supabase/client";
 
-type Product = {
-  id: string; name: string; sku?: string; purchase_price: number;
-  sale_price: number; packaging_cost: number; other_unit_cost: number;
-  stock_quantity: number; low_stock_limit: number; active: boolean;
-};
-type Order = {
-  id: string; order_number: number; customer_name: string; order_date: string;
-  status: string; delivery_charge: number; cod_charge: number;
-  discount: number; amount_paid: number;
-};
-type Expense = {
-  id: string; expense_date: string; category: string;
-  description?: string; amount: number;
+const supabase = createClient();
+
+type Task = {
+  id: string;
+  task_name: string;
+  description?: string | null;
+  assigned_to?: string | null;
+  priority?: string | null;
+  status?: string | null;
+  start_date?: string | null;
+  deadline?: string | null;
+  total_quantity?: number | null;
+  completed_quantity?: number | null;
+  notes?: string | null;
+  created_at?: string | null;
 };
 
-const money = (n: number) =>
-  "৳" + Number(n || 0).toLocaleString("en-BD", { maximumFractionDigits: 2 });
-
-const today = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+type History = {
+  id: string;
+  task_id: string;
+  previous_status?: string | null;
+  new_status: string;
+  completed_quantity?: number | null;
+  note?: string | null;
+  created_at: string;
 };
-const currentMonth = () => today().slice(0, 7);
 
-const initialForm = () => ({
-  name: "", sku: "", purchase_price: "0", sale_price: "0",
-  packaging_cost: "0", other_unit_cost: "0", stock_quantity: "0",
-  low_stock_limit: "5", customer_name: "", order_date: today(),
-  status: "pending", delivery_charge: "0", cod_charge: "0",
-  discount: "0", amount_paid: "0", product_id: "", quantity: "1",
-  category: "Facebook Ads", expense_date: today(), description: "", amount: ""
-});
+function getStatus(task: Task) {
+  return (task.status || "Pending").trim().toLowerCase();
+}
 
-export default function Home() {
-  const [tab, setTab] = useState("Dashboard");
-  const [products, setProducts] = useState<Product[]>([]);
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [items, setItems] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
-  const [mobileNav, setMobileNav] = useState(false);
-  const [showForm, setShowForm] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState<any>(initialForm());
-  const [editing, setEditing] = useState<any>(null);
-  const [orderCart, setOrderCart] = useState<any[]>([{ product_id: "", quantity: "1", sale_price: "" }]);
+function isPending(task: Task) {
+  return getStatus(task) === "pending";
+}
 
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [authLoading, setAuthLoading] = useState(true);
-  const [loginEmail, setLoginEmail] = useState("");
-  const [loginPassword, setLoginPassword] = useState("");
-  const [authError, setAuthError] = useState("");
-  const [loginBusy, setLoginBusy] = useState(false);
-  const [selectedMonth, setSelectedMonth] = useState(currentMonth());
+function isCompleted(task: Task) {
+  const status = getStatus(task);
 
-  const nav = [
-    { name: "Dashboard", icon: LayoutDashboard },
-    { name: "Products & Stock", icon: Package },
-    { name: "Orders", icon: ShoppingBag },
-    { name: "Expenses", icon: Wallet }
-  ];
+  const total = Number(task.total_quantity || 0);
+  const completed = Number(
+    task.completed_quantity || 0
+  );
 
-  const load = useCallback(async () => {
-    if (!supabase) return;
+  return (
+    status === "completed" ||
+    status === "complete" ||
+    (total > 0 && completed >= total)
+  );
+}
+
+function isInProgress(task: Task) {
+  return !isPending(task) && !isCompleted(task);
+}
+
+function isOverdue(task: Task) {
+  if (!task.deadline || isCompleted(task)) {
+    return false;
+  }
+
+  const today = new Date()
+    .toISOString()
+    .split("T")[0];
+
+  return task.deadline < today;
+}
+
+function monthKey(date: string) {
+  return date.slice(0, 7);
+}
+
+function monthLabel(key: string) {
+  const [year, month] = key.split("-");
+
+  return new Date(
+    Number(year),
+    Number(month) - 1,
+    1
+  ).toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+  });
+}
+
+function getMonthStart(key: string) {
+  return `${key}-01`;
+}
+
+function getMonthEnd(key: string) {
+  const [year, month] = key.split("-");
+
+  const date = new Date(
+    Number(year),
+    Number(month),
+    0
+  );
+
+  return date.toISOString().split("T")[0];
+}
+
+export default function DashboardPage() {
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [history, setHistory] = useState<History[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const [selectedMonth, setSelectedMonth] =
+    useState("");
+
+  // =========================
+  // LOAD DATA
+  // =========================
+
+  async function loadData() {
     setLoading(true);
-    setError("");
 
-    try {
-      const [p, o, e, it] = await Promise.all([
-        supabase.from("products").select("*").order("created_at", { ascending: false }),
-        supabase.from("orders").select("*").order("created_at", { ascending: false }),
-        supabase.from("expenses").select("*").order("expense_date", { ascending: false }),
-        supabase.from("order_items").select("*")
+    const [taskResult, historyResult] =
+      await Promise.all([
+        supabase
+          .from("office_tasks")
+          .select("*")
+          .order("created_at", {
+            ascending: false,
+          }),
+
+        supabase
+          .from("office_task_updates")
+          .select("*")
+          .order("created_at", {
+            ascending: true,
+          }),
       ]);
 
-      const problem = p.error || o.error || e.error || it.error;
-      if (problem) {
-        setError(problem.message);
-      } else {
-        setProducts((p.data || []) as Product[]);
-        setOrders((o.data || []) as Order[]);
-        setExpenses((e.data || []) as Expense[]);
-        setItems(it.data || []);
-      }
-    } catch {
-      setError("ডেটা লোড করা যায়নি। ইন্টারনেট ও Supabase connection যাচাই করো।");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    if (taskResult.error) {
+      alert(
+        "Task Load Error: " +
+          taskResult.error.message
+      );
 
-  useEffect(() => {
-    if (!supabaseReady || !supabase) {
-      setAuthLoading(false);
+      setLoading(false);
       return;
     }
 
-    let mounted = true;
+    if (historyResult.error) {
+      alert(
+        "History Load Error: " +
+          historyResult.error.message
+      );
 
-    async function checkSession() {
-      const { data, error } = await supabase!.auth.getSession();
-      if (!mounted) return;
-
-      if (error) setAuthError(error.message);
-      setIsAuthenticated(Boolean(data.session));
-      setAuthLoading(false);
-
-      if (data.session) void load();
+      setLoading(false);
+      return;
     }
 
-    void checkSession();
+    const loadedTasks = taskResult.data || [];
+    const loadedHistory =
+      historyResult.data || [];
 
-    const { data: listener } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        if (!mounted) return;
-        setIsAuthenticated(Boolean(session));
-        setAuthLoading(false);
+    setTasks(loadedTasks);
+    setHistory(loadedHistory);
 
-        if (session) {
-          void load();
-        } else {
-          setProducts([]);
-          setOrders([]);
-          setExpenses([]);
-          setItems([]);
+    // Latest month automatically select
+    const allMonths = [
+      ...loadedTasks
+        .map((task) =>
+          task.created_at
+            ? monthKey(task.created_at)
+            : ""
+        )
+        .filter(Boolean),
+
+      ...loadedHistory.map((item) =>
+        monthKey(item.created_at)
+      ),
+    ];
+
+    const uniqueMonths = Array.from(
+      new Set(allMonths)
+    ).sort();
+
+    if (
+      uniqueMonths.length > 0 &&
+      !selectedMonth
+    ) {
+      setSelectedMonth(
+        uniqueMonths[uniqueMonths.length - 1]
+      );
+    }
+
+    setLoading(false);
+  }
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  // =========================
+  // AVAILABLE MONTHS
+  // =========================
+
+  const months = useMemo(() => {
+    const monthSet = new Set<string>();
+
+    tasks.forEach((task) => {
+      if (task.created_at) {
+        monthSet.add(
+          monthKey(task.created_at)
+        );
+      }
+    });
+
+    history.forEach((item) => {
+      if (item.created_at) {
+        monthSet.add(
+          monthKey(item.created_at)
+        );
+      }
+    });
+
+    const result = Array.from(monthSet).sort();
+
+    return result.reverse();
+  }, [tasks, history]);
+
+  // =========================
+  // TASK SNAPSHOT
+  // =========================
+
+  function getTaskSnapshot(
+    task: Task,
+    endDate: string
+  ) {
+    const taskHistory = history
+      .filter(
+        (item) =>
+          item.task_id === task.id &&
+          item.created_at.slice(0, 10) <=
+            endDate
+      )
+      .sort(
+        (a, b) =>
+          new Date(a.created_at).getTime() -
+          new Date(b.created_at).getTime()
+      );
+
+    if (taskHistory.length === 0) {
+      return {
+        status: task.status || "Pending",
+        completed_quantity:
+          Number(
+            task.completed_quantity || 0
+          ),
+      };
+    }
+
+    const latest =
+      taskHistory[taskHistory.length - 1];
+
+    return {
+      status:
+        latest.new_status ||
+        task.status ||
+        "Pending",
+
+      completed_quantity:
+        Number(
+          latest.completed_quantity ??
+            task.completed_quantity ??
+            0
+        ),
+    };
+  }
+
+  function snapshotIsCompleted(
+    task: Task,
+    snapshot: {
+      status: string;
+      completed_quantity: number;
+    }
+  ) {
+    const status =
+      snapshot.status
+        .trim()
+        .toLowerCase();
+
+    const total = Number(
+      task.total_quantity || 0
+    );
+
+    return (
+      status === "completed" ||
+      status === "complete" ||
+      (total > 0 &&
+        snapshot.completed_quantity >=
+          total)
+    );
+  }
+
+  // =========================
+  // MONTH DATA
+  // =========================
+
+  const monthData = useMemo(() => {
+    if (!selectedMonth) {
+      return {
+        monthTasks: [],
+        completedTasks: [],
+        uncompleteTasks: [],
+        carryoverTasks: [],
+      };
+    }
+
+    const monthStart =
+      getMonthStart(selectedMonth);
+
+    const monthEnd =
+      getMonthEnd(selectedMonth);
+
+    // Tasks existing by month end
+    const monthTasks = tasks.filter(
+      (task) => {
+        if (!task.created_at) {
+          return false;
         }
+
+        return (
+          task.created_at.slice(0, 10) <=
+          monthEnd
+        );
       }
     );
 
-    return () => {
-      mounted = false;
-      listener.subscription.unsubscribe();
+    // Completed during selected month
+    const completedTasks = monthTasks.filter(
+      (task) => {
+        const completedHistory =
+          history.filter(
+            (item) =>
+              item.task_id === task.id &&
+              item.created_at.slice(0, 7) ===
+                selectedMonth &&
+              snapshotIsCompleted(task, {
+                status:
+                  item.new_status,
+                completed_quantity:
+                  Number(
+                    item.completed_quantity ||
+                      0
+                  ),
+              })
+          );
+
+        return completedHistory.length > 0;
+      }
+    );
+
+    // Tasks still incomplete at month end
+    const uncompleteTasks =
+      monthTasks.filter((task) => {
+        const snapshot =
+          getTaskSnapshot(
+            task,
+            monthEnd
+          );
+
+        return !snapshotIsCompleted(
+          task,
+          snapshot
+        );
+      });
+
+// Tasks from previous period which
+// were pending when selected month started
+// AND are still incomplete now
+const carryoverTasks =
+  tasks.filter((task) => {
+    if (!task.created_at) {
+      return false;
+    }
+
+    const createdDate =
+      task.created_at.slice(0, 10);
+
+    // Task অবশ্যই selected month-এর আগে তৈরি হতে হবে
+    if (createdDate >= monthStart) {
+      return false;
+    }
+
+    // =====================================
+    // 1️⃣ Selected month শুরু হওয়ার আগের অবস্থা
+    // =====================================
+
+    const previousMonthSnapshot =
+      getTaskSnapshot(
+        task,
+        getPreviousDay(monthStart)
+      );
+
+    // আগের মাসের শেষে যদি Complete থাকে,
+    // তাহলে Carryover হবে না
+    if (
+      snapshotIsCompleted(
+        task,
+        previousMonthSnapshot
+      )
+    ) {
+      return false;
+    }
+
+    // =====================================
+    // 2️⃣ Selected month-এর বর্তমান শেষ অবস্থা
+    // =====================================
+
+    const currentMonthSnapshot =
+      getTaskSnapshot(
+        task,
+        monthEnd
+      );
+
+    // ⭐ Task selected month-এর মধ্যে Complete
+    // হয়ে গেলে Carryover থেকে automatic বাদ যাবে
+    if (
+      snapshotIsCompleted(
+        task,
+        currentMonthSnapshot
+      )
+    ) {
+      return false;
+    }
+
+    // এখনো Complete হয়নি
+    return true;
+  });
+
+    return {
+      monthTasks,
+      completedTasks,
+      uncompleteTasks,
+      carryoverTasks,
     };
-  }, [load]);
+  }, [tasks, history, selectedMonth]);
 
-  async function handleLogin(ev: React.FormEvent) {
-    ev.preventDefault();
-    if (!supabase) return;
+  // =========================
+  // PREVIOUS DAY
+  // =========================
 
-    setLoginBusy(true);
-    setAuthError("");
+  function getPreviousDay(date: string) {
+    const d = new Date(date);
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email: String(loginEmail ?? "").trim(),
-      password: loginPassword
+    d.setDate(d.getDate() - 1);
+
+    return d
+      .toISOString()
+      .split("T")[0];
+  }
+
+  // =========================
+  // SELECTED MONTH SUMMARY
+  // =========================
+
+  const summary = useMemo(() => {
+    const selectedTasks =
+      monthData.monthTasks;
+
+    const totalTasks =
+      selectedTasks.length;
+
+    let pending = 0;
+    let inProgress = 0;
+    let completed = 0;
+
+    let totalQuantity = 0;
+    let completedQuantity = 0;
+
+    selectedTasks.forEach((task) => {
+      const snapshot =
+        getTaskSnapshot(
+          task,
+          selectedMonth
+            ? getMonthEnd(selectedMonth)
+            : ""
+        );
+
+      totalQuantity += Number(
+        task.total_quantity || 0
+      );
+
+      completedQuantity +=
+        snapshot.completed_quantity;
+
+      if (
+        snapshotIsCompleted(
+          task,
+          snapshot
+        )
+      ) {
+        completed++;
+      } else if (
+        snapshot.status
+          .trim()
+          .toLowerCase() ===
+        "pending"
+      ) {
+        pending++;
+      } else {
+        inProgress++;
+      }
     });
 
-    if (error) {
-      setAuthError("Login হয়নি। Admin email ও password যাচাই করো।");
-    } else {
-      setLoginPassword("");
-    }
+    const overdue =
+      selectedTasks.filter((task) => {
+        const snapshot =
+          getTaskSnapshot(
+            task,
+            getMonthEnd(selectedMonth)
+          );
 
-    setLoginBusy(false);
-  }
+        if (
+          snapshotIsCompleted(
+            task,
+            snapshot
+          )
+        ) {
+          return false;
+        }
 
-  async function handleLogout() {
-    if (!supabase) return;
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      setError(error.message);
-      return;
-    }
-
-    setIsAuthenticated(false);
-    setProducts([]);
-    setOrders([]);
-    setExpenses([]);
-    setItems([]);
-    setShowForm(false);
-    setNotice("");
-    setError("");
-  }
-
-  const itemTotals = useMemo(() => {
-    const result: Record<string, { revenue: number; cost: number }> = {};
-
-    for (const it of items) {
-      const id = it.order_id;
-      if (!id) continue;
-
-      if (!result[id]) result[id] = { revenue: 0, cost: 0 };
-
-      result[id].revenue +=
-        Number(it.quantity || 0) * Number(it.unit_sale_price || 0);
-
-      result[id].cost +=
-        Number(it.quantity || 0) *
-        (
-          Number(it.unit_purchase_cost || 0) +
-          Number(it.unit_packaging_cost || 0) +
-          Number(it.unit_other_cost || 0)
+        return (
+          task.deadline &&
+          task.deadline <
+            getMonthEnd(selectedMonth)
         );
-    }
+      }).length;
 
-    return result;
-  }, [items]);
+    const progress =
+      totalQuantity > 0
+        ? Math.min(
+            100,
+            Math.round(
+              (completedQuantity /
+                totalQuantity) *
+                100
+            )
+          )
+        : 0;
 
-  // Lifetime: delivered orders only
-  const delivered = orders.filter(o => o.status === "delivered");
-  const lifetimeSales = delivered.reduce(
-    (sum, o) => sum + (itemTotals[o.id]?.revenue || 0), 0
-  );
-  const lifetimeOrderCosts = delivered.reduce(
-    (sum, o) => sum + (itemTotals[o.id]?.cost || 0), 0
-  );
-  const lifetimeDiscounts = delivered.reduce(
-    (sum, o) => sum + Number(o.discount || 0), 0
-  );
-  const lifetimeDeliveryAndCod = delivered.reduce(
-    (sum, o) => sum + Number(o.delivery_charge || 0) + Number(o.cod_charge || 0), 0
-  );
-  // Product Purchase and Packaging costs are already counted per sold item
-  // from order_items. Exclude these categories here to avoid double counting.
-  const overheadExpenses = expenses.filter(
-    e => !["product purchase", "packaging"].includes(
-      String(e.category || "").trim().toLowerCase()
-    )
-  );
+    return {
+      totalTasks,
+      pending,
+      inProgress,
+      completed,
+      overdue,
+      totalQuantity,
+      completedQuantity,
+      progress,
+    };
+  }, [
+    monthData.monthTasks,
+    selectedMonth,
+    history,
+  ]);
 
-  const lifetimeBusinessExpenses = overheadExpenses.reduce(
-    (sum, e) => sum + Number(e.amount || 0), 0
-  );
+  // =========================
+  // EMPLOYEE-WISE UNCOMPLETE
+  // =========================
 
-  const lifetimeGrossProfit = lifetimeSales - lifetimeOrderCosts - lifetimeDiscounts;
+  const employeePending = useMemo(() => {
+    const map: Record<
+      string,
+      number
+    > = {};
 
-  const lifetimeProfit =
-    lifetimeSales -
-    lifetimeOrderCosts -
-    lifetimeDiscounts -
-    lifetimeDeliveryAndCod -
-    lifetimeBusinessExpenses;
+    monthData.uncompleteTasks.forEach(
+      (task) => {
+        const name =
+          task.assigned_to ||
+          "Unassigned";
 
-  // Monthly P&L: selected month
-  const monthlyOrders = delivered.filter(
-    o => (o.order_date || "").slice(0, 7) === selectedMonth
-  );
-  const monthlyExpenses = overheadExpenses.filter(
-    e => (e.expense_date || "").slice(0, 7) === selectedMonth
-  );
-
-  const monthlySales = monthlyOrders.reduce(
-    (sum, o) => sum + (itemTotals[o.id]?.revenue || 0), 0
-  );
-  const monthlyOrderCosts = monthlyOrders.reduce(
-    (sum, o) => sum + (itemTotals[o.id]?.cost || 0), 0
-  );
-  const monthlyDiscounts = monthlyOrders.reduce(
-    (sum, o) => sum + Number(o.discount || 0), 0
-  );
-  const monthlyDeliveryAndCod = monthlyOrders.reduce(
-    (sum, o) => sum + Number(o.delivery_charge || 0) + Number(o.cod_charge || 0), 0
-  );
-  const monthlyExpenseTotal = monthlyExpenses.reduce(
-    (sum, e) => sum + Number(e.amount || 0), 0
-  );
-
-  const monthlyGrossProfit = monthlySales - monthlyOrderCosts - monthlyDiscounts;
-
-  const monthlyProfit =
-    monthlySales -
-    monthlyOrderCosts -
-    monthlyDiscounts -
-    monthlyDeliveryAndCod -
-    monthlyExpenseTotal;
-
-  const stockValue = products.reduce(
-    (sum, p) => sum + Number(p.stock_quantity || 0) * Number(p.purchase_price || 0), 0
-  );
-  const pending = orders.filter(
-    o => !["delivered", "cancelled", "returned"].includes(o.status)
-  ).length;
-
-  function openAdd() {
-    setNotice("");
-    setError("");
-    setForm(initialForm());
-    setEditing(null);
-    setOrderCart([{ product_id: "", quantity: "1", sale_price: "" }]);
-    setShowForm(true);
-  }
-
-  async function saveRecord(ev: React.FormEvent) {
-    ev.preventDefault();
-    if (!supabase) return;
-
-    setSaving(true);
-    setError("");
-    setNotice("");
-
-    try {
-      let result: any;
-
-      if (tab === "Products & Stock") {
-      const productPayload = {
-        name: String(form.name ?? "").trim(),
-        sku: String(form.sku ?? "").trim() || null,
-        purchase_price: Number(form.purchase_price || 0),
-        // Keep legacy database column compatible; sale price is entered per order now.
-        sale_price: 0,
-        packaging_cost: Number(form.packaging_cost || 0),
-        other_unit_cost: Number(form.other_unit_cost || 0),
-        stock_quantity: Number(form.stock_quantity || 0),
-        low_stock_limit: Number(form.low_stock_limit || 5)
-      };
-      result = editing?.type === "product"
-        ? await supabase.from("products").update(productPayload).eq("id", editing.id)
-        : await supabase.from("products").insert(productPayload);
-    } else if (tab === "Orders") {
-      const validCart = orderCart.map(row => ({
-        product: products.find(p => p.id === row.product_id && p.active !== false),
-        quantity: Math.floor(Number(row.quantity || 0)),
-        sale_price: Number(row.sale_price || 0)
-      }));
-      if (!validCart.length || validCart.some(row => !row.product || !Number.isFinite(row.quantity) || row.quantity < 1 || !Number.isFinite(row.sale_price) || row.sale_price < 0)) {
-        setError("প্রতিটি পণ্য নির্বাচন করো, Quantity কমপক্ষে ১ এবং Sell Price ০ বা তার বেশি দাও।");
-        return;
+        map[name] =
+          (map[name] || 0) + 1;
       }
-      const orderPayload = {
-        customer_name: String(form.customer_name ?? "").trim(), order_date: form.order_date,
-        status: form.status, delivery_charge: Number(form.delivery_charge || 0),
-        cod_charge: Number(form.cod_charge || 0), discount: Number(form.discount || 0),
-        amount_paid: Number(form.amount_paid || 0)
-      };
-      if (editing?.type === "order") {
-        const upd = await supabase.from("orders").update(orderPayload).eq("id", editing.id);
-        if (upd.error) result = upd;
-        else {
-          const delItems = await supabase.from("order_items").delete().eq("order_id", editing.id);
-          if (delItems.error) result = delItems;
-          else {
-            const insItems = await supabase.from("order_items").insert(validCart.map(row => ({
-              order_id: editing.id, product_id: row.product!.id, product_name: row.product!.name,
-              quantity: row.quantity, unit_sale_price: Number(row.sale_price || 0),
-              unit_purchase_cost: Number(row.product!.purchase_price || 0),
-              unit_packaging_cost: Number(row.product!.packaging_cost || 0),
-              unit_other_cost: Number(row.product!.other_unit_cost || 0)
-            })));
-            result = insItems;
-          }
-        }
-      } else {
-        const orderResult = await supabase.from("orders").insert(orderPayload).select("id").single();
-        if (orderResult.error) result = orderResult;
-        else {
-          const itemResult = await supabase.from("order_items").insert(validCart.map(row => ({
-            order_id: orderResult.data.id, product_id: row.product!.id, product_name: row.product!.name,
-            quantity: row.quantity, unit_sale_price: Number(row.sale_price || 0),
-            unit_purchase_cost: Number(row.product!.purchase_price || 0),
-            unit_packaging_cost: Number(row.product!.packaging_cost || 0),
-            unit_other_cost: Number(row.product!.other_unit_cost || 0)
-          })));
-          if (itemResult.error) {
-            await supabase.from("orders").delete().eq("id", orderResult.data.id);
-            result = itemResult;
-          } else result = { error: null };
-        }
+    );
+
+    return Object.entries(map).sort(
+      (a, b) => b[1] - a[1]
+    );
+  }, [monthData.uncompleteTasks]);
+
+  // =========================
+  // EMPLOYEE-WISE COMPLETED
+  // =========================
+
+  const employeeCompleted = useMemo(() => {
+    const map: Record<
+      string,
+      number
+    > = {};
+
+    monthData.completedTasks.forEach(
+      (task) => {
+        const name =
+          task.assigned_to ||
+          "Unassigned";
+
+        map[name] =
+          (map[name] || 0) + 1;
       }
-    } else {
-      const expensePayload = {
-        expense_date: form.expense_date, category: form.category,
-        description: String(form.description ?? "").trim() || null, amount: Number(form.amount),
-        payment_method: "cash"
-      };
-      result = editing?.type === "expense"
-        ? await supabase.from("expenses").update(expensePayload).eq("id", editing.id)
-        : await supabase.from("expenses").insert(expensePayload);
-    }
+    );
 
-    if (result.error) {
-      setError(result.error.message);
-    } else {
-      setNotice(editing ? "রেকর্ড আপডেট হয়েছে।" : "রেকর্ড সফলভাবে যোগ হয়েছে।");
-      setEditing(null);
-      setShowForm(false);
-      await load();
-    }
+    return Object.entries(map).sort(
+      (a, b) => b[1] - a[1]
+    );
+  }, [monthData.completedTasks]);
 
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Save করা যায়নি। আবার চেষ্টা করো।");
-    } finally {
-      setSaving(false);
-    }
-  }
+  // =========================
+  // REFRESH
+  // =========================
 
-  async function deleteRecord(type: "product" | "order" | "expense", id: string) {
-    if (!supabase || !confirm("এই তথ্যটি Delete করতে চান?")) return;
-    setError(""); setNotice("");
-    let r: any;
-    if (type === "product") r = await supabase.from("products").delete().eq("id", id);
-    else if (type === "expense") r = await supabase.from("expenses").delete().eq("id", id);
-    else {
-      const ir = await supabase.from("order_items").delete().eq("order_id", id);
-      if (ir.error) { setError(ir.error.message); return; }
-      r = await supabase.from("orders").delete().eq("id", id);
-    }
-    if (r.error) setError("Delete করা যায়নি: " + r.error.message);
-    else { setNotice("তথ্য Delete হয়েছে।"); await load(); }
-  }
-
-  function editRecord(type: "product" | "order" | "expense", record: any) {
-    setError(""); setNotice(""); setEditing({ type, id: record.id });
-    if (type === "product") setForm({ ...initialForm(), ...record,
-      purchase_price: String(record.purchase_price ?? 0), sale_price: String(record.sale_price ?? 0),
-      packaging_cost: String(record.packaging_cost ?? 0), other_unit_cost: String(record.other_unit_cost ?? 0),
-      stock_quantity: String(record.stock_quantity ?? 0), low_stock_limit: String(record.low_stock_limit ?? 5) });
-    else if (type === "expense") setForm({ ...initialForm(), ...record,
-      amount: String(record.amount ?? 0), description: record.description || "" });
-    else {
-      setForm({ ...initialForm(), ...record, customer_name: record.customer_name || "",
-        delivery_charge: String(record.delivery_charge ?? 0), cod_charge: String(record.cod_charge ?? 0),
-        discount: String(record.discount ?? 0), amount_paid: String(record.amount_paid ?? 0) });
-      const existing = items.filter(it => it.order_id === record.id);
-      setOrderCart(existing.length ? existing.map(it => ({ product_id: it.product_id || "", quantity: String(it.quantity || 1), sale_price: String(it.unit_sale_price ?? 0) })) : [{ product_id: "", quantity: "1", sale_price: "" }]);
-    }
-    setShowForm(true);
-  }
-
-  async function changeStatus(order: Order, status: string) {
-    if (!supabase) return;
-
-    const { error } = await supabase
-      .from("orders")
-      .update({ status })
-      .eq("id", order.id);
-
-    if (error) setError(error.message);
-    else {
-      setNotice("অর্ডারের স্ট্যাটাস আপডেট হয়েছে।");
-      await load();
-    }
-  }
-
-  function exportCsv() {
-    const rows =
-      tab === "Products & Stock"
-        ? products.map(p => [p.name, p.sku || "", p.stock_quantity, p.purchase_price])
-        : tab === "Orders"
-          ? orders.map(o => [o.order_number, o.customer_name, o.order_date, o.status, o.amount_paid])
-          : expenses.map(e => [e.expense_date, e.category, e.description || "", e.amount]);
-
-    const header =
-      tab === "Products & Stock"
-        ? ["Product", "SKU", "Stock", "Purchase price"]
-        : tab === "Orders"
-          ? ["Order no", "Customer", "Date", "Status", "Paid"]
-          : ["Date", "Category", "Description", "Amount"];
-
-    const csv = [header, ...rows]
-      .map(r => r.map(v => `"${String(v ?? "").replace(/"/g, '""')}"`).join(","))
-      .join("\r\n");
-
-    const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = tab.toLowerCase().replaceAll(" ", "-") + ".csv";
-    a.click();
-    URL.revokeObjectURL(a.href);
-  }
-
-  if (authLoading) {
-    return <div style={{ minHeight: "100vh", display: "grid", placeItems: "center" }}>
-      Gift Vibes নিরাপদভাবে লোড হচ্ছে...
-    </div>;
-  }
-
-  if (!supabaseReady || !supabase) {
-    return <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 24 }}>
-      <div><h2>Gift Vibes</h2><p>Supabase connection পাওয়া যাচ্ছে না। Vercel Environment Variables যাচাই করে Redeploy করো।</p></div>
-    </div>;
-  }
-
-  if (!isAuthenticated) {
+  if (loading) {
     return (
-      <div style={{
-        minHeight: "100vh", display: "grid", placeItems: "center",
-        padding: 20, background: "#f7f5fb", fontFamily: "Arial, sans-serif"
-      }}>
-        <form onSubmit={handleLogin} style={{
-          width: "100%", maxWidth: 400, padding: 32, borderRadius: 20,
-          background: "#fff", boxShadow: "0 12px 40px rgba(30,20,50,.09)",
-          boxSizing: "border-box"
-        }}>
-          <div style={{
-            width: 54, height: 54, display: "grid", placeItems: "center",
-            borderRadius: 16, background: "#6d42a5", color: "#fff",
-            fontSize: 21, fontWeight: 800, marginBottom: 20
-          }}>GV</div>
-          <h1 style={{ margin: "0 0 8px" }}>Gift Vibes</h1>
-          <p style={{ color: "#777", marginBottom: 26 }}>Admin Login — ব্যবসার হিসাব</p>
+      <main style={styles.page}>
+        <div style={styles.container}>
+          <h1 style={styles.title}>
+            OfficeFlow Dashboard
+          </h1>
 
-          <label style={{ display: "block", marginBottom: 16 }}>
-            <span style={{ display: "block", marginBottom: 7 }}>Admin Email</span>
-            <input type="email" value={loginEmail}
-              onChange={e => setLoginEmail(e.target.value)} required
-              autoComplete="username" style={{
-                width: "100%", padding: 13, border: "1px solid #ddd",
-                borderRadius: 9, boxSizing: "border-box"
-              }} />
-          </label>
-
-          <label style={{ display: "block", marginBottom: 20 }}>
-            <span style={{ display: "block", marginBottom: 7 }}>Password</span>
-            <input type="password" value={loginPassword}
-              onChange={e => setLoginPassword(e.target.value)} required
-              autoComplete="current-password" style={{
-                width: "100%", padding: 13, border: "1px solid #ddd",
-                borderRadius: 9, boxSizing: "border-box"
-              }} />
-          </label>
-
-          {authError && <p style={{ color: "#c62828", fontSize: 14 }}>{authError}</p>}
-
-          <button type="submit" disabled={loginBusy} style={{
-            width: "100%", padding: 14, border: 0, borderRadius: 9,
-            background: "#6d42a5", color: "#fff", fontWeight: 700,
-            cursor: loginBusy ? "wait" : "pointer"
-          }}>
-            {loginBusy ? "লগইন হচ্ছে..." : "Admin Login"}
-          </button>
-        </form>
-      </div>
+          <p>Loading...</p>
+        </div>
+      </main>
     );
   }
 
   return (
-    <div className="app-shell">
-      <aside className={`sidebar ${mobileNav ? "sidebar-open" : ""}`}>
-        <div className="brand">
-          <div className="brand-mark">GV</div>
-          <div><strong>Gift Vibes</strong><small>Business Manager</small></div>
-          <button className="mobile-close" onClick={() => setMobileNav(false)}><X size={19} /></button>
-        </div>
-        <div className="nav-label">WORKSPACE</div>
-        {nav.map(n => (
-          <button key={n.name}
-            className={`nav-item ${tab === n.name ? "active" : ""}`}
-            onClick={() => {
-              setTab(n.name); setShowForm(false); setMobileNav(false);
-              setError(""); setNotice("");
-            }}>
-            <n.icon size={18} /><span>{n.name}</span>
-            {n.name === "Orders" && pending > 0 && <em>{pending}</em>}
-          </button>
-        ))}
-        <div className="sidebar-bottom">
-          <div className="online-dot"></div>
-          <div><b>Private workspace</b><small>Admin account only</small></div>
-        </div>
-      </aside>
+    <main style={styles.page}>
+      <div style={styles.container}>
 
-      {mobileNav && <button className="scrim" onClick={() => setMobileNav(false)} aria-label="Close menu" />}
+        {/* HEADER */}
 
-      <main className="main-area">
-        <header className="topbar">
-          <button className="menu-btn" onClick={() => setMobileNav(true)}><Menu /></button>
+        <div style={styles.header}>
+
           <div>
-            <div className="eyebrow">GIFT VIBES / BUSINESS</div>
-            <h1>{tab}</h1>
+            <h1 style={styles.title}>
+              OfficeFlow Dashboard
+            </h1>
+
+            <p style={styles.subtitle}>
+              Office Task Management Dashboard
+            </p>
           </div>
-          <div className="top-actions">
-            <span className="today-pill">
-              {new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
-            </span>
-            <button className="icon-btn" title="Refresh" onClick={() => void load()}><RefreshCw size={17} /></button>
-            <button className="btn secondary" onClick={() => void handleLogout()}><LogOut size={15} /> Logout</button>
+
+          <button
+            onClick={loadData}
+            style={styles.refreshButton}
+          >
+            🔄 Refresh
+          </button>
+
+        </div>
+
+        {/* MONTH SELECT */}
+
+        <section style={styles.monthPanel}>
+
+          <div>
+
+            <h2 style={styles.monthTitle}>
+              📅 Monthly Task Dashboard
+            </h2>
+
+            <p style={styles.monthSubtitle}>
+              যে মাস select করবেন সেই মাসের
+              Task Report দেখাবে
+            </p>
+
           </div>
-        </header>
 
-        {error && <div className="alert error"><AlertCircle size={19} /><div><b>সমস্যা হয়েছে</b><p>{error}</p></div></div>}
-        {notice && <div className="notice">{notice}</div>}
-
-        {tab === "Dashboard" && (
-          <div className="content">
-            <div className="welcome">
-              <div>
-                <div className="eyebrow light">YOUR BUSINESS AT A GLANCE</div>
-                <h2>আজকের হিসাব, এক জায়গায়।</h2>
-                <p>Gift Vibes-এর বিক্রি, খরচ ও লাভ-লোকসান দেখুন।</p>
-              </div>
-              <div className="welcome-orb">GV</div>
-            </div>
-
-            <div className="section-heading">
-              <div><h3><CalendarDays size={18} /> Lifetime Profit & Loss</h3>
-                <p>ব্যবসার শুরু থেকে এখন পর্যন্ত — Delivered orders</p></div>
-            </div>
-            <div className="stats-grid">
-              <Stat title="Lifetime Sales" value={money(lifetimeSales)} detail={`${delivered.length} delivered orders`} tone="purple" />
-              <Stat title="Order Product Cost" value={money(lifetimeOrderCosts)} detail="ক্রয় + প্যাকেজিং + অন্যান্য ইউনিট খরচ" tone="orange" />
-              <Stat title="Business Expenses" value={money(lifetimeBusinessExpenses)} detail={`${overheadExpenses.length} overhead entries`} tone="blue" />
-              <Stat title="Lifetime Gross Profit / Loss" value={money(lifetimeGrossProfit)} detail="Sales − Product Cost − Discount" tone={lifetimeGrossProfit >= 0 ? "green" : "red"} />
-              <Stat title="Lifetime Net Profit / Loss" value={money(lifetimeProfit)} detail={lifetimeProfit >= 0 ? "নিট লাভ" : "নিট লোকসান"} tone={lifetimeProfit >= 0 ? "green" : "red"} />
-            </div>
-
-            <div className="panel" style={{ marginBottom: 24 }}>
-              <div className="panel-title">
-                <div><h3>Lifetime P&L Breakdown</h3><p>সম্পূর্ণ ব্যবসার আয়-ব্যয়ের সারাংশ</p></div>
-                {lifetimeProfit >= 0 ? <TrendingUp size={22} /> : <TrendingDown size={22} />}
-              </div>
-              <div className="status-list">
-                <div className="status-row"><span>Delivered sales</span><b>{money(lifetimeSales)}</b></div>
-                <div className="status-row"><span>Product costs</span><b>− {money(lifetimeOrderCosts)}</b></div>
-                <div className="status-row"><span>Discounts</span><b>− {money(lifetimeDiscounts)}</b></div>
-                <div className="status-row"><strong>Lifetime Gross Profit / Loss</strong><strong>{money(lifetimeGrossProfit)}</strong></div>
-                <div className="status-row"><span>Delivery + COD charges</span><b>− {money(lifetimeDeliveryAndCod)}</b></div>
-                <div className="status-row"><span>Overhead expenses (excluding Product Purchase/Packaging)</span><b>− {money(lifetimeBusinessExpenses)}</b></div>
-                <div className="status-row"><strong>Lifetime Net Profit / Loss</strong><strong>{money(lifetimeProfit)}</strong></div>
-              </div>
-            </div>
-
-            <div className="section-heading">
-              <div><h3><CalendarDays size={18} /> Monthly Profit & Loss</h3>
-                <p>যে মাসের হিসাব দেখতে চাও সেটি নির্বাচন করো</p></div>
-              <input aria-label="Select month" type="month" value={selectedMonth}
-                onChange={e => setSelectedMonth(e.target.value)}
-                style={{ padding: 10, border: "1px solid #ddd", borderRadius: 9 }} />
-            </div>
-
-            <div className="stats-grid">
-              <Stat title="Monthly Sales" value={money(monthlySales)} detail={`${monthlyOrders.length} delivered orders`} tone="purple" />
-              <Stat title="Monthly Product Cost" value={money(monthlyOrderCosts)} detail="পণ্যের মোট ইউনিট খরচ" tone="orange" />
-              <Stat title="Monthly Expenses" value={money(monthlyExpenseTotal)} detail={`${monthlyExpenses.length} overhead entries`} tone="blue" />
-              <Stat title="Monthly Gross Profit / Loss" value={money(monthlyGrossProfit)} detail="Sales − Product Cost − Discount" tone={monthlyGrossProfit >= 0 ? "green" : "red"} />
-              <Stat title="Monthly Net Profit / Loss" value={money(monthlyProfit)} detail={monthlyProfit >= 0 ? "নির্বাচিত মাসে নিট লাভ" : "নির্বাচিত মাসে নিট লোকসান"} tone={monthlyProfit >= 0 ? "green" : "red"} />
-            </div>
-
-            <div className="panel" style={{ marginBottom: 24 }}>
-              <div className="panel-title">
-                <div><h3>{selectedMonth} — Monthly P&L Breakdown</h3><p>শুধু নির্বাচিত মাসের Delivered orders ও ওই মাসের expenses</p></div>
-                {monthlyProfit >= 0 ? <TrendingUp size={22} /> : <TrendingDown size={22} />}
-              </div>
-              <div className="status-list">
-                <div className="status-row"><span>Delivered sales</span><b>{money(monthlySales)}</b></div>
-                <div className="status-row"><span>Product costs</span><b>− {money(monthlyOrderCosts)}</b></div>
-                <div className="status-row"><span>Discounts</span><b>− {money(monthlyDiscounts)}</b></div>
-                <div className="status-row"><strong>Monthly Gross Profit / Loss</strong><strong>{money(monthlyGrossProfit)}</strong></div>
-                <div className="status-row"><span>Delivery + COD charges</span><b>− {money(monthlyDeliveryAndCod)}</b></div>
-                <div className="status-row"><span>Overhead expenses (excluding Product Purchase/Packaging)</span><b>− {money(monthlyExpenseTotal)}</b></div>
-                <div className="status-row"><strong>Monthly Net Profit / Loss</strong><strong>{money(monthlyProfit)}</strong></div>
-              </div>
-            </div>
-
-            <div className="stats-grid">
-              <Stat title="Stock Value" value={money(stockValue)} detail={`${products.length} products`} tone="blue" />
-              <Stat title="Pending Orders" value={String(pending)} detail="Delivered/cancelled/returned বাদে" tone="orange" />
-            </div>
-
-            <div className="overview-grid">
-              <div className="panel">
-                <div className="panel-title"><div><h3>Order status</h3><p>সব অর্ডারের বর্তমান অবস্থা</p></div><ShoppingBag size={20} /></div>
-                <div className="status-list">
-                  {["pending", "confirmed", "processing", "shipped", "delivered", "cancelled", "returned"].map(s => (
-                    <div className="status-row" key={s}>
-                      <span className={`status-dot ${s}`}></span><span className="capitalize">{s}</span>
-                      <b>{orders.filter(o => o.status === s).length}</b>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div className="panel">
-                <div className="panel-title"><div><h3>Stock alerts</h3><p>কম স্টক থাকা পণ্য</p></div><Package size={20} /></div>
-                {products.filter(p => p.stock_quantity <= p.low_stock_limit).length === 0
-                  ? <div className="empty-state">কম স্টক থাকা পণ্য নেই।</div>
-                  : products.filter(p => p.stock_quantity <= p.low_stock_limit).slice(0, 5).map(p => (
-                    <div className="stock-row" key={p.id}>
-                      <div className="product-avatar">{p.name.slice(0, 1).toUpperCase()}</div>
-                      <div className="grow"><b>{p.name}</b><small>Stock: {p.stock_quantity}</small></div>
-                      <span className="low-badge">Low stock</span>
-                    </div>
-                  ))}
-              </div>
-            </div>
-
-            <div className="panel recent">
-              <div className="panel-title"><div><h3>Recent orders</h3><p>সর্বশেষ যোগ করা অর্ডার</p></div>
-                <button className="text-btn" onClick={() => setTab("Orders")}>সব অর্ডার <ArrowUpRight size={15} /></button>
-              </div>
-              <OrdersTable orders={orders.slice(0, 5)} itemTotals={itemTotals} changeStatus={changeStatus} editRecord={editRecord} deleteRecord={deleteRecord} />
-            </div>
-          </div>
-        )}
-
-        {tab !== "Dashboard" && (
-          <div className="content">
-            <div className="section-heading">
-              <div>
-                <h3>{tab === "Products & Stock" ? "পণ্য ও স্টক ম্যানেজমেন্ট" : tab === "Orders" ? "অর্ডার ম্যানেজমেন্ট" : "ব্যবসার খরচ"}</h3>
-                <p>{tab === "Products & Stock" ? "ক্রয়মূল্য, বিক্রয়মূল্য এবং স্টক রাখুন" : tab === "Orders" ? "অর্ডার ও ডেলিভারি স্ট্যাটাস ট্র্যাক করুন" : "বিজ্ঞাপন, প্যাকেজিং ও অন্যান্য খরচ যোগ করুন"}</p>
-              </div>
-              <div className="row-actions">
-                <button className="btn secondary" onClick={exportCsv}><Download size={15} /> Export CSV</button>
-                <button className="btn primary" onClick={openAdd}><Plus size={17} /> Add {tab === "Products & Stock" ? "Product" : tab === "Orders" ? "Order" : "Expense"}</button>
-              </div>
-            </div>
-
-            {showForm && (
-              <form className="panel form-panel" onSubmit={saveRecord}>
-                <div className="panel-title">
-                  <div><h3>{editing ? "তথ্য Edit করুন" : `নতুন ${tab === "Products & Stock" ? "পণ্য" : tab === "Orders" ? "অর্ডার" : "খরচ"} যোগ করুন`}</h3><p>প্রয়োজনীয় তথ্য পূরণ করুন</p></div>
-                  <button type="button" className="icon-btn" onClick={() => { setShowForm(false); setEditing(null); }}><X size={17} /></button>
-                </div>
-
-                {tab === "Products & Stock" && (
-                  <div className="form-grid">
-                    <Field label="Product name *" value={form.name} onChange={v => setForm({ ...form, name: v })} required />
-                    <Field label="SKU (optional)" value={form.sku} onChange={v => setForm({ ...form, sku: v })} />
-                    <Field label="Purchase price (৳)" type="number" value={form.purchase_price} onChange={v => setForm({ ...form, purchase_price: v })} required />
-                    <Field label="Packaging cost per unit (৳)" type="number" value={form.packaging_cost} onChange={v => setForm({ ...form, packaging_cost: v })} />
-                    <Field label="Other unit cost (৳)" type="number" value={form.other_unit_cost} onChange={v => setForm({ ...form, other_unit_cost: v })} />
-                    <Field label="Opening stock" type="number" value={form.stock_quantity} onChange={v => setForm({ ...form, stock_quantity: v })} />
-                    <Field label="Low stock alert at" type="number" value={form.low_stock_limit} onChange={v => setForm({ ...form, low_stock_limit: v })} />
-                  </div>
-                )}
-
-                {tab === "Orders" && (
-                  <div className="form-grid">
-                    <Field label="Customer name *" value={form.customer_name} onChange={v => setForm({ ...form, customer_name: v })} required />
-                    <Field label="Order date" type="date" value={form.order_date} onChange={v => setForm({ ...form, order_date: v })} />
-                    <div style={{ gridColumn: "1 / -1" }}>
-                      <b>অর্ডারের পণ্যসমূহ</b>
-                      {orderCart.map((row, idx) => {
-                        const prod = products.find(p => p.id === row.product_id);
-                        return <div key={idx} className="form-grid" style={{ marginTop: 10, padding: 12, border: "1px solid #eee", borderRadius: 10 }}>
-                          <label className="field"><span>Product *</span>
-                            <select value={row.product_id} onChange={e => setOrderCart(cart => cart.map((r, i) => i === idx ? { ...r, product_id: e.target.value } : r))} required>
-                              <option value="">পণ্য নির্বাচন করো</option>
-                              {products.filter(p => p.active !== false).map(p => <option key={p.id} value={p.id}>{p.name} — ক্রয় {money(p.purchase_price)}</option>)}
-                            </select>
-                          </label>
-                          <Field label="Quantity *" type="number" value={row.quantity} onChange={v => setOrderCart(cart => cart.map((r, i) => i === idx ? { ...r, quantity: v } : r))} required />
-                          <Field label="এই অর্ডারের Sell Price (প্রতি পিস ৳) *" type="number" value={row.sale_price ?? ""} onChange={v => setOrderCart(cart => cart.map((r, i) => i === idx ? { ...r, sale_price: v } : r))} required />
-                          <div style={{ gridColumn: "1 / -1", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: 10 }}>
-                            <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
-                              <span>Buy Price: <b>{money(Number(prod?.purchase_price || 0))}</b></span>
-                              <span>Packaging: <b>{money(Number(prod?.packaging_cost || 0))}</b></span>
-                              {Number(prod?.other_unit_cost || 0) > 0 && <span>Other Cost: <b>{money(Number(prod?.other_unit_cost || 0))}</b></span>}
-                              <span>মোট খরচ/পিস: <b>{money(Number(prod?.purchase_price || 0) + Number(prod?.packaging_cost || 0) + Number(prod?.other_unit_cost || 0))}</b></span>
-                              <span>এই পণ্যের মোট খরচ: <b>{money((Number(prod?.purchase_price || 0) + Number(prod?.packaging_cost || 0) + Number(prod?.other_unit_cost || 0)) * Number(row.quantity || 0))}</b></span>
-                            </div>
-                          </div>
-                          <div style={{ alignSelf: "end" }}><b>মোট বিক্রয়: {money(Number(row.sale_price || 0) * Number(row.quantity || 0))}</b> <button type="button" className="btn secondary" onClick={() => setOrderCart(cart => cart.filter((_, i) => i !== idx))} disabled={orderCart.length === 1}>Remove</button></div>
-                        </div>;
-                      })}
-                      <button type="button" className="btn secondary" style={{ marginTop: 10 }} onClick={() => setOrderCart(cart => [...cart, { product_id: "", quantity: "1", sale_price: "" }])}><Plus size={15}/> আরও পণ্য যোগ করুন</button>
-                      <div style={{ marginTop: 14, padding: 14, borderRadius: 10, border: "1px solid #cbd5e1", background: "#f8fafc" }}>
-                        {(() => {
-                          const orderSaleTotal = orderCart.reduce((sum, row) => sum + Number(row.quantity || 0) * Number(row.sale_price || 0), 0);
-                          const orderCostTotal = orderCart.reduce((sum, row) => {
-                            const p = products.find(item => item.id === row.product_id);
-                            return sum + Number(row.quantity || 0) * (Number(p?.purchase_price || 0) + Number(p?.packaging_cost || 0) + Number(p?.other_unit_cost || 0));
-                          }, 0);
-                          const estimatedProfit = orderSaleTotal - orderCostTotal - Number(form.discount || 0) - Number(form.delivery_charge || 0) - Number(form.cod_charge || 0);
-                          return <div style={{ display: "flex", flexWrap: "wrap", gap: 18 }}>
-                            <span>সব পণ্যের মোট অর্ডার মূল্য: <b>{money(orderSaleTotal)}</b></span>
-                            <span>সব পণ্যের মোট খরচ: <b>{money(orderCostTotal)}</b></span>
-                            <span>আনুমানিক লাভ/ক্ষতি: <b style={{ color: estimatedProfit < 0 ? "#dc2626" : "#15803d" }}>{estimatedProfit < 0 ? "ক্ষতি " : "লাভ "}{money(Math.abs(estimatedProfit))}</b></span>
-                          </div>;
-                        })()}
-                      </div>
-                      <p className="footnote">অর্ডার মূল্য = সব পণ্যের Quantity × Sell Price যোগফল। আনুমানিক লাভ/ক্ষতি = অর্ডার মূল্য − পণ্যের খরচ − Discount − Delivery charge − COD charge।</p>
-                    </div>
-                    <label className="field"><span>Status</span>
-                      <select value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}>
-                        {["pending", "confirmed", "processing", "shipped", "delivered", "cancelled", "returned"].map(s => <option key={s}>{s}</option>)}
-                      </select>
-                    </label>
-                    <Field label="Delivery charge (৳)" type="number" value={form.delivery_charge} onChange={v => setForm({ ...form, delivery_charge: v })} />
-                    <Field label="COD charge (৳)" type="number" value={form.cod_charge} onChange={v => setForm({ ...form, cod_charge: v })} />
-                    <Field label="Discount (৳)" type="number" value={form.discount} onChange={v => setForm({ ...form, discount: v })} />
-                    <Field label="Amount paid (৳)" type="number" value={form.amount_paid} onChange={v => setForm({ ...form, amount_paid: v })} />
-                  </div>
-                )}
-
-                {tab === "Expenses" && (
-                  <div className="form-grid">
-                    <label className="field"><span>Category</span>
-                      <select value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}>
-                        {["Facebook Ads", "Product purchase", "Packaging", "Courier", "COD fee", "Transport", "Salary", "Commission", "Other"].map(s => <option key={s}>{s}</option>)}
-                      </select>
-                    </label>
-                    <Field label="Expense date" type="date" value={form.expense_date} onChange={v => setForm({ ...form, expense_date: v })} />
-                    <Field label="Amount (৳) *" type="number" value={form.amount} onChange={v => setForm({ ...form, amount: v })} required />
-                    <Field label="Description" value={form.description} onChange={v => setForm({ ...form, description: v })} />
-                    <p className="footnote" style={{ gridColumn: "1 / -1" }}>
-                      Product purchase ও Packaging খরচ এখানে নথিভুক্ত করা যাবে, তবে Net Profit-এ এই দুই category আবার বাদ হবে না—কারণ বিক্রি হওয়া পণ্যের খরচ order_items থেকে হিসাব করা হয়।
-                    </p>
-                  </div>
-                )}
-
-                <div className="form-footer">
-                  <button type="button" className="btn secondary" onClick={() => { setShowForm(false); setEditing(null); }}>Cancel</button>
-                  <button className="btn primary" disabled={saving}>{saving ? "Saving..." : editing ? "Update record" : "Save record"}</button>
-                </div>
-              </form>
-            )}
-
-            {loading ? <div className="panel empty-state">লোড হচ্ছে...</div> :
-              tab === "Products & Stock" ? (
-                <div className="panel table-panel">
-                  <table><thead><tr><th>Product</th><th>Stock</th><th>Purchase price</th><th>Unit cost*</th><th>Actions</th></tr></thead>
-                    <tbody>{products.map(p => <tr key={p.id}>
-                      <td><b>{p.name}</b><small>{p.sku || "No SKU"}</small></td>
-                      <td><span className={p.stock_quantity <= p.low_stock_limit ? "low-badge" : "pill"}>{p.stock_quantity}</span></td>
-                      <td>{money(p.purchase_price)}</td>
-                      <td>{money(Number(p.purchase_price) + Number(p.packaging_cost) + Number(p.other_unit_cost))}</td><td><button className="icon-btn" title="Edit" onClick={() => editRecord("product", p)}><Pencil size={15}/></button> <button className="icon-btn" title="Delete" onClick={() => void deleteRecord("product", p.id)}><Trash2 size={15}/></button></td>
-                    </tr>)}</tbody>
-                  </table>
-                  {products.length === 0 && <div className="empty-state">এখনো কোনো পণ্য যোগ করা হয়নি। Add Product চাপুন।</div>}
-                  <p className="footnote">* প্রতি ইউনিটের আনুমানিক মোট খরচ (ক্রয় + প্যাকেজিং + অন্যান্য খরচ)।</p>
-                </div>
-              ) : tab === "Orders" ? (
-                <div className="panel table-panel">
-                  <OrdersTable orders={orders} itemTotals={itemTotals} changeStatus={changeStatus} editRecord={editRecord} deleteRecord={deleteRecord} />
-                  {orders.length === 0 && <div className="empty-state">এখনো কোনো অর্ডার নেই। Add Order চাপুন।</div>}
-                  <p className="footnote">একটি অর্ডারে একাধিক পণ্য যোগ করা যায়। Amount Paid-এ পাওয়া টাকা সংরক্ষিত থাকে।</p>
-                </div>
-              ) : (
-                <div className="panel table-panel">
-                  <table><thead><tr><th>Date</th><th>Category</th><th>Description</th><th>Amount</th><th>Actions</th></tr></thead>
-                    <tbody>{expenses.map(e => <tr key={e.id}>
-                      <td>{e.expense_date}</td><td>{e.category}</td><td>{e.description || "—"}</td><td className="amount">{money(e.amount)}</td><td><button className="icon-btn" title="Edit" onClick={() => editRecord("expense", e)}><Pencil size={15}/></button> <button className="icon-btn" title="Delete" onClick={() => void deleteRecord("expense", e.id)}><Trash2 size={15}/></button></td>
-                    </tr>)}</tbody>
-                  </table>
-                  {expenses.length === 0 && <div className="empty-state">এখনো কোনো খরচ যোগ করা হয়নি।</div>}
-                </div>
+          <select
+            value={selectedMonth}
+            onChange={(e) =>
+              setSelectedMonth(
+                e.target.value
               )
             }
+            style={styles.monthSelect}
+          >
+
+            <option value="">
+              -- Month Select করুন --
+            </option>
+
+            {months.map((month) => (
+              <option
+                key={month}
+                value={month}
+              >
+                {monthLabel(month)}
+              </option>
+            ))}
+
+          </select>
+
+        </section>
+
+        {selectedMonth && (
+          <div style={styles.selectedMonthBadge}>
+            📅 Showing:{" "}
+            <strong>
+              {monthLabel(selectedMonth)}
+            </strong>
           </div>
         )}
 
-        <footer className="footer">Gift Vibes Business Manager <span>•</span> Private business workspace</footer>
-      </main>
+        {/* SUMMARY CARDS */}
+
+        <section style={styles.cards}>
+
+          <StatCard
+            title="Total Tasks"
+            value={summary.totalTasks}
+            icon="📋"
+          />
+
+          <StatCard
+            title="Pending"
+            value={summary.pending}
+            icon="⏳"
+          />
+
+          <StatCard
+            title="In Progress"
+            value={summary.inProgress}
+            icon="⚙️"
+          />
+
+          <StatCard
+            title="Completed"
+            value={summary.completed}
+            icon="✅"
+          />
+
+          <StatCard
+            title="Overdue"
+            value={summary.overdue}
+            icon="⚠️"
+          />
+
+          <StatCard
+            title="Total Quantity"
+            value={summary.totalQuantity}
+            icon="📦"
+          />
+
+          <StatCard
+            title="Completed Quantity"
+            value={summary.completedQuantity}
+            icon="🎯"
+          />
+
+          <StatCard
+            title="Progress"
+            value={`${summary.progress}%`}
+            icon="📊"
+          />
+
+        </section>
+
+        {/* =========================
+            COMPLETED TASKS
+        ========================= */}
+
+        <section style={styles.panel}>
+
+          <div style={styles.sectionHeader}>
+
+            <div>
+              <h2 style={styles.sectionTitle}>
+                ✅ {monthLabel(
+                  selectedMonth
+                )} — Completed Tasks
+              </h2>
+
+              <p style={styles.sectionSubtitle}>
+                এই মাসে Complete হওয়া কাজ
+              </p>
+            </div>
+
+            <span
+              style={styles.completedBadge}
+            >
+              {monthData.completedTasks.length}
+            </span>
+
+          </div>
+
+          {monthData.completedTasks.length ===
+          0 ? (
+
+            <div style={styles.empty}>
+              এই মাসে কোনো Task Complete হয়নি।
+            </div>
+
+          ) : (
+
+            <div style={styles.tableWrapper}>
+
+              <table style={styles.table}>
+
+                <thead>
+                  <tr>
+
+                    <th style={styles.th}>
+                      Task
+                    </th>
+
+                    <th style={styles.th}>
+                      Employee
+                    </th>
+
+                    <th style={styles.th}>
+                      Quantity
+                    </th>
+
+                    <th style={styles.th}>
+                      Deadline
+                    </th>
+
+                  </tr>
+                </thead>
+
+                <tbody>
+
+                  {monthData.completedTasks.map(
+                    (task) => (
+
+                      <tr key={task.id}>
+
+                        <td style={styles.td}>
+                          <strong>
+                            {task.task_name}
+                          </strong>
+                        </td>
+
+                        <td style={styles.td}>
+                          {task.assigned_to ||
+                            "Unassigned"}
+                        </td>
+
+                        <td style={styles.td}>
+                          {Number(
+                            task.completed_quantity ||
+                              0
+                          )}{" "}
+                          /{" "}
+                          {Number(
+                            task.total_quantity ||
+                              0
+                          )}
+                        </td>
+
+                        <td style={styles.td}>
+                          {task.deadline ||
+                            "-"}
+                        </td>
+
+                      </tr>
+
+                    )
+                  )}
+
+                </tbody>
+
+              </table>
+
+            </div>
+
+          )}
+
+        </section>
+
+        {/* =========================
+            UNCOMPLETE TASKS
+        ========================= */}
+
+        <section style={styles.panel}>
+
+          <div style={styles.sectionHeader}>
+
+            <div>
+              <h2 style={styles.sectionTitle}>
+                🟠 {monthLabel(
+                  selectedMonth
+                )} — Uncomplete Tasks
+              </h2>
+
+              <p style={styles.sectionSubtitle}>
+                মাস শেষ হওয়ার সময় যেসব কাজ
+                Complete হয়নি
+              </p>
+            </div>
+
+            <span
+              style={styles.pendingBadge}
+            >
+              {monthData.uncompleteTasks.length}
+            </span>
+
+          </div>
+
+          {monthData.uncompleteTasks.length ===
+          0 ? (
+
+            <div style={styles.successBox}>
+              🎉 এই মাসে কোনো Uncomplete Task নেই।
+            </div>
+
+          ) : (
+
+            <div style={styles.tableWrapper}>
+
+              <table style={styles.table}>
+
+                <thead>
+                  <tr>
+
+                    <th style={styles.th}>
+                      Task
+                    </th>
+
+                    <th style={styles.th}>
+                      Employee
+                    </th>
+
+                    <th style={styles.th}>
+                      Status
+                    </th>
+
+                    <th style={styles.th}>
+                      Deadline
+                    </th>
+
+                  </tr>
+                </thead>
+
+                <tbody>
+
+                  {monthData.uncompleteTasks.map(
+                    (task) => {
+
+                      const snapshot =
+                        getTaskSnapshot(
+                          task,
+                          getMonthEnd(
+                            selectedMonth
+                          )
+                        );
+
+                      return (
+                        <tr key={task.id}>
+
+                          <td style={styles.td}>
+                            <strong>
+                              {task.task_name}
+                            </strong>
+                          </td>
+
+                          <td style={styles.td}>
+                            {task.assigned_to ||
+                              "Unassigned"}
+                          </td>
+
+                          <td style={styles.td}>
+
+                            <span
+                              style={
+                                styles.statusBadge
+                              }
+                            >
+                              {snapshot.status ||
+                                "Pending"}
+                            </span>
+
+                          </td>
+
+                          <td style={styles.td}>
+                            {task.deadline ||
+                              "-"}
+                          </td>
+
+                        </tr>
+                      );
+                    }
+                  )}
+
+                </tbody>
+
+              </table>
+
+            </div>
+
+          )}
+
+        </section>
+
+        {/* =========================
+            CARRYOVER
+        ========================= */}
+
+        <section style={styles.carryoverPanel}>
+
+          <div style={styles.sectionHeader}>
+
+            <div>
+
+              <h2 style={styles.sectionTitle}>
+                🔴 Previous Month Carryover
+              </h2>
+
+              <p style={styles.sectionSubtitle}>
+                {monthLabel(
+                  selectedMonth
+                )} শুরু হওয়ার আগেই যেসব কাজ
+                Pending ছিল
+              </p>
+
+            </div>
+
+            <span
+              style={styles.carryoverBadge}
+            >
+              {monthData.carryoverTasks.length}
+            </span>
+
+          </div>
+
+          {monthData.carryoverTasks.length ===
+          0 ? (
+
+            <div style={styles.successBox}>
+              ✅ আগের মাস থেকে কোনো Pending
+              Task Carryover হয়নি।
+            </div>
+
+          ) : (
+
+            <div style={styles.tableWrapper}>
+
+              <table style={styles.table}>
+
+                <thead>
+                  <tr>
+
+                    <th style={styles.th}>
+                      Task
+                    </th>
+
+                    <th style={styles.th}>
+                      Employee
+                    </th>
+
+                    <th style={styles.th}>
+                      Deadline
+                    </th>
+
+                  </tr>
+                </thead>
+
+                <tbody>
+
+                  {monthData.carryoverTasks.map(
+                    (task) => (
+
+                      <tr key={task.id}>
+
+                        <td style={styles.td}>
+                          <strong>
+                            {task.task_name}
+                          </strong>
+                        </td>
+
+                        <td style={styles.td}>
+                          {task.assigned_to ||
+                            "Unassigned"}
+                        </td>
+
+                        <td style={styles.td}>
+                          {task.deadline ||
+                            "-"}
+                        </td>
+
+                      </tr>
+
+                    )
+                  )}
+
+                </tbody>
+
+              </table>
+
+            </div>
+
+          )}
+
+        </section>
+
+        {/* =========================
+            EMPLOYEE PENDING
+        ========================= */}
+
+        <section style={styles.panel}>
+
+          <h2 style={styles.sectionTitle}>
+            👥 Employee-wise Uncomplete Task
+          </h2>
+
+          <p style={styles.sectionSubtitle}>
+            {monthLabel(
+              selectedMonth
+            )} অনুযায়ী Employee-এর বাকি কাজ
+          </p>
+
+          {employeePending.length ===
+          0 ? (
+
+            <div style={styles.successBox}>
+              🎉 কোনো Uncomplete Task নেই।
+            </div>
+
+          ) : (
+
+            employeePending.map(
+              ([employee, count]) => (
+
+                <div
+                  key={employee}
+                  style={styles.employeeRow}
+                >
+
+                  <strong>
+                    {employee}
+                  </strong>
+
+                  <span
+                    style={
+                      styles.employeePending
+                    }
+                  >
+                    {count} Task বাকি
+                  </span>
+
+                </div>
+
+              )
+            )
+
+          )}
+
+        </section>
+
+        {/* =========================
+            EMPLOYEE COMPLETED
+        ========================= */}
+
+        <section style={styles.panel}>
+
+          <h2 style={styles.sectionTitle}>
+            ✅ Employee-wise Completed Task
+          </h2>
+
+          <p style={styles.sectionSubtitle}>
+            {monthLabel(
+              selectedMonth
+            )} অনুযায়ী Employee-এর Complete
+            কাজ
+          </p>
+
+          {employeeCompleted.length ===
+          0 ? (
+
+            <div style={styles.empty}>
+              এই মাসে কোনো Completed Task নেই।
+            </div>
+
+          ) : (
+
+            employeeCompleted.map(
+              ([employee, count]) => (
+
+                <div
+                  key={employee}
+                  style={styles.employeeRow}
+                >
+
+                  <strong>
+                    {employee}
+                  </strong>
+
+                  <span
+                    style={
+                      styles.employeeCompleted
+                    }
+                  >
+                    {count} Task Complete
+                  </span>
+
+                </div>
+
+              )
+            )
+
+          )}
+
+        </section>
+
+        {/* =========================
+            STATUS REPORT
+        ========================= */}
+
+        <section style={styles.panel}>
+
+          <h2 style={styles.sectionTitle}>
+            📊 {monthLabel(
+              selectedMonth
+            )} Status Report
+          </h2>
+
+          <ReportRow
+            label="⏳ Pending"
+            value={summary.pending}
+            total={summary.totalTasks}
+          />
+
+          <ReportRow
+            label="⚙️ In Progress"
+            value={summary.inProgress}
+            total={summary.totalTasks}
+          />
+
+          <ReportRow
+            label="✅ Completed"
+            value={summary.completed}
+            total={summary.totalTasks}
+          />
+
+          <ReportRow
+            label="⚠️ Overdue"
+            value={summary.overdue}
+            total={summary.totalTasks}
+          />
+
+        </section>
+
+        {/* =========================
+            QUANTITY PROGRESS
+        ========================= */}
+
+        <section style={styles.panel}>
+
+          <div
+            style={styles.sectionHeader}
+          >
+
+            <h2 style={styles.sectionTitle}>
+              📦 Quantity Progress
+            </h2>
+
+            <strong>
+              {summary.progress}%
+            </strong>
+
+          </div>
+
+          <div
+            style={
+              styles.progressBackground
+            }
+          >
+
+            <div
+              style={{
+                ...styles.progressBar,
+                width: `${summary.progress}%`,
+              }}
+            />
+
+          </div>
+
+          <p style={styles.smallText}>
+            Completed{" "}
+            {summary.completedQuantity} /{" "}
+            {summary.totalQuantity} quantity
+          </p>
+
+        </section>
+
+      </div>
+    </main>
+  );
+}
+
+/* =========================
+   STAT CARD
+========================= */
+
+function StatCard({
+  title,
+  value,
+  icon,
+}: {
+  title: string;
+  value: number | string;
+  icon: string;
+}) {
+  return (
+    <div style={styles.card}>
+
+      <div style={styles.icon}>
+        {icon}
+      </div>
+
+      <div>
+
+        <div style={styles.cardLabel}>
+          {title}
+        </div>
+
+        <div style={styles.cardNumber}>
+          {value}
+        </div>
+
+      </div>
+
     </div>
   );
 }
 
-function Stat({ title, value, detail, tone }: {
-  title: string; value: string; detail: string; tone: string;
+/* =========================
+   REPORT ROW
+========================= */
+
+function ReportRow({
+  label,
+  value,
+  total,
+}: {
+  label: string;
+  value: number;
+  total: number;
 }) {
-  return <div className="stat-card">
-    <div className={`stat-icon ${tone}`}><Wallet size={19} /></div>
-    <span className="stat-title">{title}</span>
-    <strong className="stat-value">{value}</strong>
-    <small>{detail}</small>
-  </div>;
+  const percent =
+    total > 0
+      ? Math.round(
+          (value / total) * 100
+        )
+      : 0;
+
+  return (
+    <div style={styles.reportRow}>
+
+      <div
+        style={styles.reportHeader}
+      >
+
+        <strong>
+          {label}
+        </strong>
+
+        <span>
+          {value} ({percent}%)
+        </span>
+
+      </div>
+
+      <div
+        style={
+          styles.reportBackground
+        }
+      >
+
+        <div
+          style={{
+            ...styles.reportBar,
+            width: `${percent}%`,
+          }}
+        />
+
+      </div>
+
+    </div>
+  );
 }
 
-function Field({ label, value, onChange, type = "text", required = false }: {
-  label: string; value: string; onChange: (v: string) => void;
-  type?: string; required?: boolean;
-}) {
-  return <label className="field"><span>{label}</span>
-    <input type={type} value={value} onChange={e => onChange(e.target.value)}
-      required={required} min={type === "number" ? "0" : undefined}
-      step={type === "number" ? "0.01" : undefined} />
-  </label>;
-}
+/* =========================
+   STYLES
+========================= */
 
-function OrdersTable({ orders, itemTotals, changeStatus, editRecord, deleteRecord }: {
-  orders: Order[];
-  itemTotals: Record<string, { revenue: number; cost: number }>;
-  changeStatus: (o: Order, s: string) => void;
-  editRecord: (type: "product" | "order" | "expense", record: any) => void;
-  deleteRecord: (type: "product" | "order" | "expense", id: string) => void;
-}) {
-  return <div className="table-scroll">
-    <table><thead><tr><th>Order</th><th>Customer</th><th>Date</th><th>Order Total</th><th>Profit / Loss</th><th>Status</th><th>Paid</th><th>Actions</th></tr></thead>
-      <tbody>{orders.map(o => {
-        const totals = itemTotals[o.id] || { revenue: 0, cost: 0 };
-        const profit = totals.revenue - totals.cost - Number(o.discount || 0) - Number(o.delivery_charge || 0) - Number(o.cod_charge || 0);
-        return <tr key={o.id}>
-          <td><b>#{o.order_number}</b></td><td>{o.customer_name}</td><td>{o.order_date}</td>
-          <td><b>{money(totals.revenue)}</b></td>
-          <td><b style={{ color: profit < 0 ? "#dc2626" : "#15803d" }}>{profit < 0 ? "ক্ষতি " : "লাভ "}{money(Math.abs(profit))}</b></td>
-          <td><select className={`status-select ${o.status}`} value={o.status}
-            onChange={e => changeStatus(o, e.target.value)}>
-            {["pending", "confirmed", "processing", "shipped", "delivered", "cancelled", "returned"].map(s => <option key={s}>{s}</option>)}
-          </select></td>
-          <td>{money(o.amount_paid)}</td><td><button className="icon-btn" title="Edit" onClick={() => editRecord("order", o)}><Pencil size={15}/></button> <button className="icon-btn" title="Delete" onClick={() => void deleteRecord("order", o.id)}><Trash2 size={15}/></button></td>
-        </tr>;
-      })}</tbody>
-    </table>
-  </div>;
-}
+const styles: Record<
+  string,
+  React.CSSProperties
+> = {
+
+  page: {
+    minHeight: "100vh",
+    background: "#f5f7fb",
+    padding: "30px 20px",
+  },
+
+  container: {
+    maxWidth: "1400px",
+    margin: "0 auto",
+  },
+
+  header: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: "20px",
+    marginBottom: "25px",
+    flexWrap: "wrap",
+  },
+
+  title: {
+    margin: 0,
+    fontSize: "30px",
+    fontWeight: 800,
+  },
+
+  subtitle: {
+    marginTop: "6px",
+    color: "#667085",
+  },
+
+  refreshButton: {
+    border: "none",
+    background: "#111827",
+    color: "#fff",
+    padding: "11px 18px",
+    borderRadius: "9px",
+    cursor: "pointer",
+    fontWeight: 600,
+  },
+
+  monthPanel: {
+    background: "#fff",
+    padding: "20px",
+    borderRadius: "14px",
+    marginBottom: "12px",
+    boxShadow:
+      "0 4px 15px rgba(0,0,0,0.05)",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: "20px",
+    flexWrap: "wrap",
+  },
+
+  monthTitle: {
+    margin: 0,
+    fontSize: "21px",
+  },
+
+  monthSubtitle: {
+    margin: "5px 0 0",
+    color: "#667085",
+    fontSize: "13px",
+  },
+
+  monthSelect: {
+    minWidth: "220px",
+    padding: "12px",
+    border:
+      "1px solid #d0d5dd",
+    borderRadius: "9px",
+    background: "#fff",
+    fontSize: "14px",
+    fontWeight: 600,
+  },
+
+  selectedMonthBadge: {
+    background: "#eef2ff",
+    color: "#3730a3",
+    padding: "10px 15px",
+    borderRadius: "9px",
+    marginBottom: "20px",
+    display: "inline-block",
+  },
+
+  cards: {
+    display: "grid",
+    gridTemplateColumns:
+      "repeat(auto-fit, minmax(210px, 1fr))",
+    gap: "15px",
+    marginBottom: "25px",
+  },
+
+  card: {
+    background: "#fff",
+    borderRadius: "14px",
+    padding: "20px",
+    display: "flex",
+    alignItems: "center",
+    gap: "15px",
+    boxShadow:
+      "0 4px 15px rgba(0,0,0,0.05)",
+  },
+
+  icon: {
+    fontSize: "30px",
+  },
+
+  cardLabel: {
+    color: "#667085",
+    fontSize: "13px",
+  },
+
+  cardNumber: {
+    fontSize: "26px",
+    fontWeight: 800,
+    marginTop: "4px",
+  },
+
+  panel: {
+    background: "#fff",
+    padding: "22px",
+    borderRadius: "14px",
+    marginBottom: "25px",
+    boxShadow:
+      "0 4px 15px rgba(0,0,0,0.05)",
+  },
+
+  carryoverPanel: {
+    background: "#fff7ed",
+    padding: "22px",
+    borderRadius: "14px",
+    marginBottom: "25px",
+    border: "1px solid #fed7aa",
+  },
+
+  sectionHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: "15px",
+    marginBottom: "15px",
+  },
+
+  sectionTitle: {
+    margin: 0,
+    fontSize: "20px",
+    fontWeight: 800,
+  },
+
+  sectionSubtitle: {
+    margin: "5px 0 0",
+    color: "#667085",
+    fontSize: "13px",
+  },
+
+  completedBadge: {
+    background: "#dcfce7",
+    color: "#166534",
+    padding: "7px 13px",
+    borderRadius: "20px",
+    fontWeight: 700,
+  },
+
+  pendingBadge: {
+    background: "#fef3c7",
+    color: "#92400e",
+    padding: "7px 13px",
+    borderRadius: "20px",
+    fontWeight: 700,
+  },
+
+  carryoverBadge: {
+    background: "#fee2e2",
+    color: "#991b1b",
+    padding: "7px 13px",
+    borderRadius: "20px",
+    fontWeight: 700,
+  },
+
+  successBox: {
+    background: "#ecfdf3",
+    color: "#166534",
+    padding: "15px",
+    borderRadius: "9px",
+    fontWeight: 600,
+  },
+
+  empty: {
+    color: "#667085",
+    textAlign: "center",
+    padding: "25px",
+  },
+
+  tableWrapper: {
+    overflowX: "auto",
+  },
+
+  table: {
+    width: "100%",
+    borderCollapse: "collapse",
+    minWidth: "700px",
+  },
+
+  th: {
+    textAlign: "left",
+    padding: "12px",
+    background: "#f9fafb",
+    borderBottom:
+      "1px solid #e5e7eb",
+    fontSize: "13px",
+    color: "#475467",
+  },
+
+  td: {
+    padding: "13px 12px",
+    borderBottom:
+      "1px solid #eee",
+    fontSize: "14px",
+  },
+
+  statusBadge: {
+    display: "inline-block",
+    background: "#fef3c7",
+    color: "#92400e",
+    padding: "5px 10px",
+    borderRadius: "15px",
+    fontSize: "12px",
+    fontWeight: 700,
+  },
+
+  employeeRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: "13px 0",
+    borderBottom:
+      "1px solid #eee",
+  },
+
+  employeePending: {
+    background: "#fff7ed",
+    color: "#c2410c",
+    padding: "6px 12px",
+    borderRadius: "20px",
+    fontSize: "13px",
+    fontWeight: 700,
+  },
+
+  employeeCompleted: {
+    background: "#dcfce7",
+    color: "#166534",
+    padding: "6px 12px",
+    borderRadius: "20px",
+    fontSize: "13px",
+    fontWeight: 700,
+  },
+
+  reportRow: {
+    marginBottom: "17px",
+  },
+
+  reportHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    marginBottom: "7px",
+    fontSize: "14px",
+  },
+
+  reportBackground: {
+    width: "100%",
+    height: "10px",
+    background: "#eaecf0",
+    borderRadius: "20px",
+    overflow: "hidden",
+  },
+
+  reportBar: {
+    height: "100%",
+    background: "#2563eb",
+    borderRadius: "20px",
+  },
+
+  progressBackground: {
+    width: "100%",
+    height: "16px",
+    background: "#eaecf0",
+    borderRadius: "20px",
+    overflow: "hidden",
+  },
+
+  progressBar: {
+    height: "100%",
+    background: "#16a34a",
+    borderRadius: "20px",
+    transition:
+      "width 0.3s ease",
+  },
+
+  smallText: {
+    color: "#667085",
+    fontSize: "13px",
+    marginTop: "10px",
+  },
+};
